@@ -1,8 +1,4 @@
-import { CLAUDE_MODEL_DEFINITIONS } from '@/lib/constants/claudeModels';
-import { CODEX_MODEL_DEFINITIONS } from '@/lib/constants/codexModels';
-import { CURSOR_MODEL_DEFINITIONS } from '@/lib/constants/cursorModels';
-import { QWEN_MODEL_DEFINITIONS } from '@/lib/constants/qwenModels';
-import { GLM_MODEL_DEFINITIONS } from '@/lib/constants/glmModels';
+import { getModelDefinitionsForCli } from '@/lib/constants/cliModels';
 
 /**
  * Frontend CLI Type Definitions (claude-only variant)
@@ -31,6 +27,15 @@ export interface CLIOption {
   downloadUrl?: string;
   installCommand?: string;
   features?: string[];
+}
+
+function toCliModels(cli: CLIType): CLIModel[] {
+  return getModelDefinitionsForCli(cli).map(({ id, name, description, supportsImages }) => ({
+    id,
+    name,
+    description,
+    supportsImages,
+  }));
 }
 
 export type CLIStatusEntry = {
@@ -66,12 +71,7 @@ export const CLI_OPTIONS: CLIOption[] = [
     downloadUrl: 'https://docs.anthropic.com/en/docs/claude-code/overview',
     installCommand: 'npm install -g @anthropic-ai/claude-code',
     features: ['Advanced reasoning', 'Code generation', '1M context window'],
-    models: CLAUDE_MODEL_DEFINITIONS.map(({ id, name, description, supportsImages }) => ({
-      id,
-      name,
-      description,
-      supportsImages,
-    })),
+    models: toCliModels('claude'),
   },
   {
     id: 'codex',
@@ -86,12 +86,7 @@ export const CLI_OPTIONS: CLIOption[] = [
     downloadUrl: 'https://github.com/openai/codex',
     installCommand: 'npm install -g @openai/codex',
     features: ['Autonomous agent', 'OpenAI model router', 'apply_patch support'],
-    models: CODEX_MODEL_DEFINITIONS.map(({ id, name, description, supportsImages }) => ({
-      id,
-      name,
-      description,
-      supportsImages,
-    })),
+    models: toCliModels('codex'),
   },
   {
     id: 'cursor',
@@ -106,12 +101,7 @@ export const CLI_OPTIONS: CLIOption[] = [
     downloadUrl: 'https://docs.cursor.com/en/cli/overview',
     installCommand: 'curl https://cursor.com/install -fsS | bash',
     features: ['Autonomous agent', 'Multi-model routing', 'Session resume'],
-    models: CURSOR_MODEL_DEFINITIONS.map(({ id, name, description, supportsImages }) => ({
-      id,
-      name,
-      description,
-      supportsImages,
-    })),
+    models: toCliModels('cursor'),
   },
   {
     id: 'qwen',
@@ -126,12 +116,7 @@ export const CLI_OPTIONS: CLIOption[] = [
     downloadUrl: 'https://github.com/QwenLM/qwen-code',
     installCommand: 'npm install -g @qwen-code/qwen-code',
     features: ['Autonomous coding agent', 'Workspace sandboxing', 'Tool approval modes'],
-    models: QWEN_MODEL_DEFINITIONS.map(({ id, name, description, supportsImages }) => ({
-      id,
-      name,
-      description,
-      supportsImages,
-    })),
+    models: toCliModels('qwen'),
   },
   {
     id: 'glm',
@@ -146,11 +131,6 @@ export const CLI_OPTIONS: CLIOption[] = [
     downloadUrl: 'https://docs.z.ai/devpack/tool/claude',
     installCommand: 'zai devpack install claude',
     features: ['Claude-compatible agent runtime', 'GLM 4.6 reasoning'],
-    models: GLM_MODEL_DEFINITIONS.map(({ id, name, description, supportsImages }) => ({
-      id,
-      name,
-      description,
-      supportsImages,
-    })),
+    models: toCliModels('glm'),
   },
 ];

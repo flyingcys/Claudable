@@ -4,6 +4,15 @@ import assert from 'node:assert/strict';
 const { CODEX_DEFAULT_MODEL, normalizeCodexModelId } = await import(
   new URL('../lib/constants/codexModels.ts', import.meta.url).href
 );
+const { CURSOR_MODEL_DEFINITIONS } = await import(
+  new URL('../lib/constants/cursorModels.ts', import.meta.url).href
+);
+const { getCliModelConfig } = await import(
+  new URL('../lib/constants/modelRegistry.ts', import.meta.url).href
+);
+const { CODEX_MODEL_DEFINITIONS } = await import(
+  new URL('../lib/constants/codexModels.ts', import.meta.url).href
+);
 const {
   CODEX_DEFAULT_REASONING_EFFORT,
   buildCodexReasoningConfig,
@@ -28,6 +37,14 @@ test('codex 模型默认值切到 gpt-5.5', () => {
 
 test('旧 codex 模型会回退到新的默认模型', () => {
   assert.equal(normalizeCodexModelId('gpt-4o'), 'gpt-5.5');
+});
+
+test('codex provider 常量直接透传 registry 模型定义', () => {
+  assert.deepEqual(CODEX_MODEL_DEFINITIONS, getCliModelConfig('codex').models);
+});
+
+test('cursor provider 常量直接透传 registry 模型定义', () => {
+  assert.deepEqual(CURSOR_MODEL_DEFINITIONS, getCliModelConfig('cursor').models);
 });
 
 test('reasoning 默认值为 high，非法值回退到 high', () => {

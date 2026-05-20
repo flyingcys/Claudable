@@ -7,12 +7,12 @@ import { NextResponse } from 'next/server';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import type { CLIStatus } from '@/types/backend';
-import { CODEX_MODEL_DEFINITIONS } from '@/lib/constants/codexModels';
-import { QWEN_MODEL_DEFINITIONS } from '@/lib/constants/qwenModels';
-import { GLM_MODEL_DEFINITIONS } from '@/lib/constants/glmModels';
-import { CURSOR_MODEL_DEFINITIONS } from '@/lib/constants/cursorModels';
+import { getModelDefinitionsForCli } from '@/lib/constants/cliModels';
 
 const execAsync = promisify(exec);
+
+const getCliModelIds = (cli: 'codex' | 'cursor' | 'qwen' | 'glm') =>
+  getModelDefinitionsForCli(cli).map((model) => model.id);
 
 /**
  * Check Claude Code CLI installation
@@ -149,7 +149,7 @@ export async function GET() {
       version: codexStatus.version,
       checking: false,
       error: codexStatus.error,
-      models: CODEX_MODEL_DEFINITIONS.map(model => model.id),
+      models: getCliModelIds('codex'),
     };
 
     const cursorStatus = await checkCursorCLI();
@@ -158,7 +158,7 @@ export async function GET() {
       version: cursorStatus.version,
       checking: false,
       error: cursorStatus.error,
-      models: CURSOR_MODEL_DEFINITIONS.map((model) => model.id),
+      models: getCliModelIds('cursor'),
     };
 
     const qwenStatus = await checkQwenCLI();
@@ -167,7 +167,7 @@ export async function GET() {
       version: qwenStatus.version,
       checking: false,
       error: qwenStatus.error,
-      models: QWEN_MODEL_DEFINITIONS.map((model) => model.id),
+      models: getCliModelIds('qwen'),
     };
 
     const glmStatus = claudeStatus;
@@ -176,7 +176,7 @@ export async function GET() {
       version: glmStatus.version,
       checking: false,
       error: glmStatus.error,
-      models: GLM_MODEL_DEFINITIONS.map((model) => model.id),
+      models: getCliModelIds('glm'),
     };
 
     return NextResponse.json(status);
