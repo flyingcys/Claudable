@@ -1,0 +1,24 @@
+{
+  "cli": "qwen",
+  "defaultModel": "qwen3-coder-plus",
+  "models": [
+    {
+      "id": "qwen3-coder-plus",
+      "name": "Qwen3 Coder Plus",
+      "description": "Balanced 32k context model optimised for coding tasks",
+      "aliases": ["qwen3-coder+", "qwen3-plus", "qwen3 coder plus", "qwen-coder-plus", "qwen-coder+", "qwen-plus", "qwen coder plus"]
+    },
+    {
+      "id": "qwen3-coder-pro",
+      "name": "Qwen3 Coder Pro",
+      "description": "Larger 128k context model with stronger reasoning",
+      "aliases": ["qwen3-pro", "qwen3 coder pro", "qwen-coder-pro", "qwen-pro", "qwen coder pro"]
+    },
+    {
+      "id": "qwen3-coder",
+      "name": "Qwen3 Coder",
+      "description": "Default quick model for fast iteration",
+      "aliases": ["qwen3", "qwen coder", "qwen-coder", "qwen"]
+    }
+  ]
+}

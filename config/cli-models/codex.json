@@ -1,0 +1,41 @@
+{
+  "cli": "codex",
+  "defaultModel": "gpt-5.5",
+  "models": [
+    {
+      "id": "gpt-5.5",
+      "name": "GPT-5.5",
+      "description": "Newest frontier Codex model for complex coding workflows",
+      "supportsImages": true,
+      "aliases": ["gpt5", "gpt_5", "gpt-5", "gpt-5.0", "gpt-4o", "claude-sonnet-3.5", "claude35-sonnet"]
+    },
+    {
+      "id": "gpt-5.4",
+      "name": "GPT-5.4",
+      "description": "Strong default fallback when GPT-5.5 is unavailable",
+      "supportsImages": true,
+      "aliases": ["gpt54", "gpt_5_4", "o1-preview"]
+    },
+    {
+      "id": "gpt-5.4-mini",
+      "name": "GPT-5.4 Mini",
+      "description": "Faster and lighter GPT-5.4 variant",
+      "supportsImages": true,
+      "aliases": ["gpt54mini", "gpt-5.4mini", "gpt_5_4_mini", "gpt-4o-mini", "o1-mini", "claude-3-haiku"]
+    },
+    {
+      "id": "gpt-5.3-codex",
+      "name": "GPT-5.3 Codex",
+      "description": "Research-preview Codex-tuned model for fast iterations",
+      "supportsImages": true,
+      "aliases": ["gpt53codex", "gpt-5.3-codex-spark", "gpt-5.3-codex-spark-preview"]
+    },
+    {
+      "id": "gpt-5.2",
+      "name": "GPT-5.2",
+      "description": "Stable earlier GPT-5 generation for compatibility",
+      "supportsImages": true,
+      "aliases": ["gpt52", "gpt_5_2"]
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "cli": "glm",
+  "defaultModel": "glm-4.6",
+  "models": [
+    {
+      "id": "glm-4.6",
+      "name": "GLM 4.6",
+      "description": "Zhipu GLM 4.6 with Claude Code compatible agent runtime",
+      "supportsImages": false,
+      "aliases": ["glm46", "glm-46", "glm_46", "glm 4.6", "glm-4_6", "glm4.6", "glm4", "glm", "glm-latest"]
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "cli": "cursor",
+  "defaultModel": "gpt-5",
+  "models": [
+    {
+      "id": "gpt-5",
+      "name": "GPT-5",
+      "description": "Cursor Agent default multi-model router (auto-selects best model)",
+      "aliases": ["gpt5", "gpt-5.0"]
+    },
+    {
+      "id": "sonnet-4",
+      "name": "Claude Sonnet 4",
+      "description": "Anthropic Claude Sonnet via Cursor Agent router",
+      "aliases": ["sonnet4", "sonnet-4.5", "sonnet-45", "claude-sonnet-4.5", "claude-sonnet-45", "claude-sonnet-4_5", "claude-sonnet-4", "opus-4.6", "opus-4.1", "claude-opus-4.6", "claude-opus-4.1", "claude-opus-46", "claude-opus-41", "claude-opus-4_6", "claude-opus-4_1"]
+    },
+    {
+      "id": "sonnet-4-thinking",
+      "name": "Claude Sonnet 4 (Thinking)",
+      "description": "High-depth Claude Sonnet reasoning mode",
+      "aliases": ["sonnet-4.0-thinking", "claude-sonnet-4-thinking"]
+    }
+  ]
+}
