@@ -21,6 +21,11 @@ test('未知模型回退到对应 cli 默认值', () => {
   assert.equal(normalizeModelId('qwen', 'unknown-model'), 'qwen3-coder-plus');
 });
 
+test('cli 标识会先做 trim 再路由到对应配置', () => {
+  assert.equal(getDefaultModelForCli(' codex '), 'gpt-5.5');
+  assert.equal(getCliModelConfig(' cursor ').cli, 'cursor');
+});
+
 test('gemini 模型列表来自 json，不再是 cliModels.ts 内联常量', () => {
   const ids = getModelDefinitionsForCli('gemini').map((item: { id: string }) => item.id);
   assert.deepEqual(ids, ['gemini-2.5-pro', 'gemini-2.5-flash']);

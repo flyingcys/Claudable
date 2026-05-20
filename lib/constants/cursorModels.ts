@@ -1,13 +1,10 @@
-import type { RegistryModelDefinition } from './modelRegistry';
-
-type ModelRegistryModule = typeof import('./modelRegistry');
-
-const {
+import {
   getCliModelConfig,
   getDefaultModelForCli,
   getModelDisplayName,
   normalizeModelId,
-}: ModelRegistryModule = await import(new URL('./modelRegistry.ts', import.meta.url).href);
+  type RegistryModelDefinition,
+} from './modelRegistry.ts';
 
 export interface CursorModelDefinition extends RegistryModelDefinition {}
 

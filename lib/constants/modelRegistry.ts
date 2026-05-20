@@ -31,19 +31,55 @@ const RAW_CONFIGS: Record<CLIKey, CliModelConfig> = {
 };
 
 const normalizeKey = (value: string) => value.trim().toLowerCase().replace(/[\s_]+/g, '-');
+const sanitizeCliKey = (value: string | null | undefined): CLIKey | undefined => {
+  const normalized = (value || '').trim().toLowerCase();
+  switch (normalized) {
+    case 'claude':
+    case 'codex':
+    case 'cursor':
+    case 'gemini':
+    case 'qwen':
+    case 'glm':
+      return normalized;
+    default:
+      return undefined;
+  }
+};
 
 const REGISTRY = Object.fromEntries(
   Object.entries(RAW_CONFIGS).map(([cli, config]) => {
-    const knownIds = new Set(config.models.map((model) => model.id));
+    if (config.cli !== cli) {
+      throw new Error(`[modelRegistry] ${cli} config has mismatched cli field: ${config.cli}`);
+    }
+
+    const knownIds = new Set<string>();
+    config.models.forEach((model) => {
+      if (knownIds.has(model.id)) {
+        throw new Error(`[modelRegistry] ${cli} has duplicate model id: ${model.id}`);
+      }
+      knownIds.add(model.id);
+    });
+
     if (!knownIds.has(config.defaultModel)) {
       throw new Error(`[modelRegistry] ${cli} defaultModel ${config.defaultModel} missing from models`);
     }
 
     const aliasMap: Record<string, string> = {};
     config.models.forEach((model) => {
-      aliasMap[normalizeKey(model.id)] = model.id;
+      const registerAlias = (raw: string) => {
+        const key = normalizeKey(raw);
+        const existing = aliasMap[key];
+        if (existing && existing !== model.id) {
+          throw new Error(
+            `[modelRegistry] ${cli} alias collision for "${raw}" between ${existing} and ${model.id}`,
+          );
+        }
+        aliasMap[key] = model.id;
+      };
+
+      registerAlias(model.id);
       model.aliases?.forEach((alias) => {
-        aliasMap[normalizeKey(alias)] = model.id;
+        registerAlias(alias);
       });
     });
 
@@ -52,7 +88,7 @@ const REGISTRY = Object.fromEntries(
 ) as Record<CLIKey, { config: CliModelConfig; aliasMap: Record<string, string> }>;
 
 export function getCliModelConfig(cli: string | null | undefined): CliModelConfig {
-  const key = (cli || 'claude').toLowerCase() as CLIKey;
+  const key = sanitizeCliKey(cli) ?? 'claude';
   return REGISTRY[key]?.config ?? REGISTRY.claude.config;
 }
 
