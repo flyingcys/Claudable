@@ -23,6 +23,7 @@ export interface CreateProjectCLIOption {
 export interface CLIConfig {
   enabled?: boolean;
   model?: string;
+  reasoning_effort?: string;
 }
 
 export interface GlobalSettings {

@@ -37,6 +37,7 @@ export interface Project {
   };
   preferredCli?: CLIType | null;
   selectedModel?: string | null;
+  selectedReasoningEffort?: string | null;
   fallbackEnabled?: boolean;
 }
 
@@ -44,4 +45,5 @@ export interface ProjectSettings {
   preferredCli: CLIType;
   fallbackEnabled: boolean;
   selectedModel?: string | null;
+  selectedReasoningEffort?: string | null;
 }

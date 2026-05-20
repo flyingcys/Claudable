@@ -51,6 +51,14 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
           : typeof body.selected_model === 'string'
           ? body.selected_model
           : undefined,
+      selectedReasoningEffort:
+        typeof body.selectedReasoningEffort === 'string'
+          ? body.selectedReasoningEffort
+          : typeof body.selected_reasoning_effort === 'string'
+          ? body.selected_reasoning_effort
+          : body.selectedReasoningEffort === null || body.selected_reasoning_effort === null
+          ? null
+          : undefined,
     };
 
     const updated = await updateProjectCliPreference(project_id, update);

@@ -71,6 +71,12 @@ export async function PUT(
       previewPort: body.previewPort,
       preferredCli: body.preferredCli,
       selectedModel: body.selectedModel,
+      selectedReasoningEffort:
+        typeof body.selectedReasoningEffort === 'string'
+          ? body.selectedReasoningEffort
+          : typeof body.selected_reasoning_effort === 'string'
+          ? body.selected_reasoning_effort
+          : undefined,
       settings: body.settings,
     };
 

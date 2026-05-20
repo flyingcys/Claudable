@@ -9,6 +9,7 @@ import { getAllProjects, createProject } from '@/lib/services/project';
 import type { CreateProjectInput } from '@/types/backend';
 import { serializeProjects, serializeProject } from '@/lib/serializers/project';
 import { getDefaultModelForCli, normalizeModelId } from '@/lib/constants/cliModels';
+import { normalizeCodexReasoningEffort } from '@/lib/constants/codexReasoning';
 import { createSuccessResponse, createErrorResponse, handleApiError } from '@/lib/utils/api-response';
 
 /**
@@ -33,6 +34,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const preferredCli = String(body.preferredCli || body.preferred_cli || 'claude').toLowerCase();
     const requestedModel = body.selectedModel || body.selected_model;
+    const requestedReasoningEffort = body.selectedReasoningEffort || body.selected_reasoning_effort;
 
     const input: CreateProjectInput = {
       project_id: body.project_id,
@@ -40,6 +42,8 @@ export async function POST(request: NextRequest) {
       initialPrompt: body.initialPrompt || body.initial_prompt,
       preferredCli,
       selectedModel: normalizeModelId(preferredCli, requestedModel ?? getDefaultModelForCli(preferredCli)),
+      selectedReasoningEffort:
+        preferredCli === 'codex' ? normalizeCodexReasoningEffort(requestedReasoningEffort) : undefined,
       description: body.description,
     };
 

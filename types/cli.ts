@@ -49,6 +49,7 @@ export interface CLIPreference {
   preferredCli: CLIType;
   fallbackEnabled: boolean;
   selectedModel?: string;
+  selectedReasoningEffort?: string;
 }
 
 export const CLI_OPTIONS: CLIOption[] = [

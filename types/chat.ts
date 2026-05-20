@@ -28,6 +28,7 @@ export interface ActRequest {
   cliPreference?: string;
   fallbackEnabled?: boolean;
   selectedModel?: string;
+  selectedReasoningEffort?: string;
   images?: ImageAttachment[];
   requestId?: string;
   metadata?: MessageMetadata | null;

@@ -15,6 +15,11 @@ import { getProjectById } from '@/lib/services/project';
 import { getDefaultModelForCli } from '@/lib/constants/cliModels';
 import { CODEX_DEFAULT_MODEL, getCodexModelDisplayName, normalizeCodexModelId } from '@/lib/constants/codexModels';
 import {
+  buildCodexReasoningConfig,
+  CODEX_DEFAULT_REASONING_EFFORT,
+  normalizeCodexReasoningEffort,
+} from '@/lib/constants/codexReasoning';
+import {
   markUserRequestAsRunning,
   markUserRequestAsCompleted,
   markUserRequestAsFailed,
@@ -484,10 +489,12 @@ async function executeCodex(
   projectPath: string,
   instruction: string,
   model: string,
+  reasoningEffort: string,
   requestId?: string,
   isInitialPrompt: boolean = false,
 ): Promise<void> {
   const normalizedModel = normalizeCodexModelId(model);
+  const normalizedReasoningEffort = normalizeCodexReasoningEffort(reasoningEffort);
   const modelDisplayName = getCodexModelDisplayName(normalizedModel);
   publishStatus(projectId, 'starting', requestId);
 
@@ -529,6 +536,7 @@ async function executeCodex(
     'max_turns=20',
     '-c',
     'max_thinking_tokens=4096',
+    ...buildCodexReasoningConfig(normalizedReasoningEffort),
     '-c',
     `instructions=${JSON.stringify(AUTO_INSTRUCTIONS)}`,
   ];
@@ -552,6 +560,7 @@ async function executeCodex(
     projectId,
     repoPath,
     model: normalizedModel,
+    reasoningEffort: normalizedReasoningEffort,
     requestId,
   });
 
@@ -1013,6 +1022,7 @@ export async function initializeNextJsProject(
   projectPath: string,
   initialPrompt: string,
   model: string = CODEX_DEFAULT_MODEL,
+  reasoningEffort: string = CODEX_DEFAULT_REASONING_EFFORT,
   requestId?: string,
 ): Promise<void> {
   const fullPrompt = `
@@ -1023,7 +1033,15 @@ Use App Router, TypeScript, and Tailwind CSS.
 Set up the basic project structure and implement the requested features.
 `.trim();
 
-  await executeCodex(projectId, projectPath, fullPrompt, model ?? getDefaultModelForCli('codex'), requestId, true);
+  await executeCodex(
+    projectId,
+    projectPath,
+    fullPrompt,
+    model ?? getDefaultModelForCli('codex'),
+    reasoningEffort,
+    requestId,
+    true,
+  );
 }
 
 export async function applyChanges(
@@ -1031,8 +1049,17 @@ export async function applyChanges(
   projectPath: string,
   instruction: string,
   model: string = CODEX_DEFAULT_MODEL,
+  reasoningEffort: string = CODEX_DEFAULT_REASONING_EFFORT,
   _sessionId?: string,
   requestId?: string,
 ): Promise<void> {
-  await executeCodex(projectId, projectPath, instruction, model ?? getDefaultModelForCli('codex'), requestId, false);
+  await executeCodex(
+    projectId,
+    projectPath,
+    instruction,
+    model ?? getDefaultModelForCli('codex'),
+    reasoningEffort,
+    requestId,
+    false,
+  );
 }

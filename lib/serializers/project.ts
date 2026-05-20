@@ -15,6 +15,7 @@ export function serializeProject(project: ProjectEntity): Project {
     initialPrompt: project.initialPrompt ?? null,
     preferredCli: (project.preferredCli ?? null) as Project['preferredCli'],
     selectedModel: project.selectedModel ?? null,
+    selectedReasoningEffort: project.selectedReasoningEffort ?? null,
     fallbackEnabled: project.fallbackEnabled,
   };
 }

@@ -59,6 +59,7 @@ export interface ChatActRequest {
   images?: ImageAttachment[];
   isInitialPrompt?: boolean;
   selectedModel?: string;
+  selectedReasoningEffort?: string;
   requestId?: string;
 }
 

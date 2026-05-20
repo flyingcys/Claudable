@@ -7,11 +7,25 @@ import type { Project, CreateProjectInput, UpdateProjectInput } from '@/types/ba
 import fs from 'fs/promises';
 import path from 'path';
 import { normalizeModelId, getDefaultModelForCli } from '@/lib/constants/cliModels';
+import {
+  mergeProjectReasoningEffortIntoSettings,
+  readProjectReasoningEffortFromSettings,
+} from '@/lib/constants/codexReasoning';
 
 const PROJECTS_DIR = process.env.PROJECTS_DIR || './data/projects';
 const PROJECTS_DIR_ABSOLUTE = path.isAbsolute(PROJECTS_DIR)
   ? PROJECTS_DIR
   : path.resolve(process.cwd(), PROJECTS_DIR);
+
+function withNormalizedCliSettings<T extends { preferredCli?: string | null; selectedModel?: string | null; settings?: string | null }>(
+  project: T,
+): T & { selectedReasoningEffort: string | null } {
+  return {
+    ...project,
+    selectedModel: normalizeModelId(project.preferredCli ?? 'claude', project.selectedModel ?? undefined),
+    selectedReasoningEffort: readProjectReasoningEffortFromSettings(project.settings),
+  };
+}
 
 /**
  * Retrieve all projects
@@ -22,10 +36,7 @@ export async function getAllProjects(): Promise<Project[]> {
       lastActiveAt: 'desc',
     },
   });
-  return projects.map(project => ({
-    ...project,
-    selectedModel: normalizeModelId(project.preferredCli ?? 'claude', project.selectedModel ?? undefined),
-  })) as Project[];
+  return projects.map((project) => withNormalizedCliSettings(project)) as Project[];
 }
 
 /**
@@ -36,10 +47,7 @@ export async function getProjectById(id: string): Promise<Project | null> {
     where: { id },
   });
   if (!project) return null;
-  return {
-    ...project,
-    selectedModel: normalizeModelId(project.preferredCli ?? 'claude', project.selectedModel ?? undefined),
-  } as Project;
+  return withNormalizedCliSettings(project) as Project;
 }
 
 /**
@@ -60,6 +68,10 @@ export async function createProject(input: CreateProjectInput): Promise<Project>
       repoPath: projectPath,
       preferredCli: input.preferredCli || 'claude',
       selectedModel: normalizeModelId(input.preferredCli || 'claude', input.selectedModel ?? getDefaultModelForCli(input.preferredCli || 'claude')),
+      settings:
+        typeof input.selectedReasoningEffort === 'string'
+          ? mergeProjectReasoningEffortIntoSettings(null, input.selectedReasoningEffort)
+          : null,
       status: 'idle',
       templateType: 'nextjs',
       lastActiveAt: new Date(),
@@ -69,10 +81,7 @@ export async function createProject(input: CreateProjectInput): Promise<Project>
   });
 
   console.log(`[ProjectService] Created project: ${project.id}`);
-  return {
-    ...project,
-    selectedModel: normalizeModelId(project.preferredCli ?? 'claude', project.selectedModel ?? undefined),
-  } as Project;
+  return withNormalizedCliSettings(project) as Project;
 }
 
 /**
@@ -84,29 +93,45 @@ export async function updateProject(
 ): Promise<Project> {
   const existing = await prisma.project.findUnique({
     where: { id },
-    select: { preferredCli: true },
+    select: { preferredCli: true, settings: true },
   });
   const targetCli = input.preferredCli ?? existing?.preferredCli ?? 'claude';
   const normalizedModel = input.selectedModel
     ? normalizeModelId(targetCli, input.selectedModel)
     : undefined;
+  const nextSettings =
+    typeof input.selectedReasoningEffort !== 'undefined'
+      ? mergeProjectReasoningEffortIntoSettings(input.settings ?? existing?.settings, input.selectedReasoningEffort)
+      : input.settings;
 
   const project = await prisma.project.update({
     where: { id },
     data: {
-      ...input,
+      ...(typeof input.name !== 'undefined' ? { name: input.name } : {}),
+      ...(typeof input.description !== 'undefined' ? { description: input.description } : {}),
+      ...(typeof input.status !== 'undefined' ? { status: input.status } : {}),
+      ...(typeof input.previewUrl !== 'undefined' ? { previewUrl: input.previewUrl } : {}),
+      ...(typeof input.previewPort !== 'undefined' ? { previewPort: input.previewPort } : {}),
+      ...(typeof input.preferredCli !== 'undefined' ? { preferredCli: input.preferredCli } : {}),
+      ...(typeof input.activeClaudeSessionId !== 'undefined'
+        ? { activeClaudeSessionId: input.activeClaudeSessionId }
+        : {}),
+      ...(typeof input.activeCursorSessionId !== 'undefined'
+        ? { activeCursorSessionId: input.activeCursorSessionId }
+        : {}),
+      ...(typeof input.repoPath !== 'undefined' ? { repoPath: input.repoPath } : {}),
       ...(input.selectedModel
         ? { selectedModel: normalizedModel }
+        : {}),
+      ...(typeof input.selectedReasoningEffort !== 'undefined' || typeof input.settings !== 'undefined'
+        ? { settings: nextSettings }
         : {}),
       updatedAt: new Date(),
     },
   });
 
   console.log(`[ProjectService] Updated project: ${id}`);
-  return {
-    ...project,
-    selectedModel: normalizeModelId(project.preferredCli ?? 'claude', project.selectedModel ?? undefined),
-  } as Project;
+  return withNormalizedCliSettings(project) as Project;
 }
 
 /**
@@ -164,6 +189,7 @@ export interface ProjectCliPreference {
   preferredCli: string;
   fallbackEnabled: boolean;
   selectedModel: string | null;
+  selectedReasoningEffort: string | null;
 }
 
 export async function getProjectCliPreference(projectId: string): Promise<ProjectCliPreference | null> {
@@ -173,6 +199,7 @@ export async function getProjectCliPreference(projectId: string): Promise<Projec
       preferredCli: true,
       fallbackEnabled: true,
       selectedModel: true,
+      settings: true,
     },
   });
 
@@ -184,6 +211,7 @@ export async function getProjectCliPreference(projectId: string): Promise<Projec
     preferredCli: project.preferredCli ?? 'claude',
     fallbackEnabled: project.fallbackEnabled ?? false,
     selectedModel: normalizeModelId(project.preferredCli ?? 'claude', project.selectedModel ?? undefined),
+    selectedReasoningEffort: readProjectReasoningEffortFromSettings(project.settings),
   };
 }
 
@@ -193,9 +221,13 @@ export async function updateProjectCliPreference(
 ): Promise<ProjectCliPreference> {
   const existing = await prisma.project.findUnique({
     where: { id: projectId },
-    select: { preferredCli: true },
+    select: { preferredCli: true, settings: true },
   });
   const targetCli = input.preferredCli ?? existing?.preferredCli ?? 'claude';
+  const nextSettings =
+    typeof input.selectedReasoningEffort !== 'undefined'
+      ? mergeProjectReasoningEffortIntoSettings(existing?.settings, input.selectedReasoningEffort)
+      : undefined;
 
   const result = await prisma.project.update({
     where: { id: projectId },
@@ -209,12 +241,16 @@ export async function updateProjectCliPreference(
         : input.selectedModel === null
         ? { selectedModel: null }
         : {}),
+      ...(typeof input.selectedReasoningEffort !== 'undefined'
+        ? { settings: nextSettings }
+        : {}),
       updatedAt: new Date(),
     },
     select: {
       preferredCli: true,
       fallbackEnabled: true,
       selectedModel: true,
+      settings: true,
     },
   });
 
@@ -222,5 +258,6 @@ export async function updateProjectCliPreference(
     preferredCli: result.preferredCli ?? 'claude',
     fallbackEnabled: result.fallbackEnabled ?? false,
     selectedModel: normalizeModelId(result.preferredCli ?? 'claude', result.selectedModel ?? undefined),
+    selectedReasoningEffort: readProjectReasoningEffortFromSettings(result.settings),
   };
 }

@@ -1,12 +1,14 @@
 "use client";
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { getDefaultModelForCli } from '@/lib/constants/cliModels';
+import { CODEX_DEFAULT_REASONING_EFFORT } from '@/lib/constants/codexReasoning';
 
 export type GlobalAISettings = {
   default_cli: string;
   cli_settings: {
     [key: string]: {
       model?: string;
+      reasoning_effort?: string;
       apiKey?: string;
       [key: string]: unknown;
     };
@@ -23,7 +25,10 @@ const defaultSettings: GlobalAISettings = {
   default_cli: 'claude',
   cli_settings: {
     claude: { model: getDefaultModelForCli('claude') },
-    codex: { model: getDefaultModelForCli('codex') },
+    codex: {
+      model: getDefaultModelForCli('codex'),
+      reasoning_effort: CODEX_DEFAULT_REASONING_EFFORT,
+    },
     qwen: { model: getDefaultModelForCli('qwen') },
     glm: { model: getDefaultModelForCli('glm') },
   },

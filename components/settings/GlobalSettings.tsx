@@ -7,6 +7,7 @@ import ServiceConnectionModal from '@/components/modals/ServiceConnectionModal';
 import { FaCog } from 'react-icons/fa';
 import { useGlobalSettings } from '@/contexts/GlobalSettingsContext';
 import { getModelDefinitionsForCli, normalizeModelId } from '@/lib/constants/cliModels';
+import { CODEX_REASONING_DEFINITIONS, normalizeCodexReasoningEffort } from '@/lib/constants/codexReasoning';
 import { fetchCliStatusSnapshot, createCliStatusFallback } from '@/hooks/useCLI';
 import type { CLIStatus } from '@/types/cli';
 
@@ -170,6 +171,11 @@ export default function GlobalSettings({ isOpen, onClose, initialTab = 'general'
             if (config && typeof config === 'object' && 'model' in config) {
               (config as any).model = normalizeModelId(cli, (config as any).model as string);
             }
+            if (cli === 'codex' && config && typeof config === 'object') {
+              (config as any).reasoning_effort = normalizeCodexReasoningEffort(
+                (config as any).reasoning_effort as string | undefined
+              );
+            }
           }
         }
         setGlobalSettings(settings);
@@ -214,6 +220,11 @@ export default function GlobalSettings({ isOpen, onClose, initialTab = 'general'
         for (const [cli, config] of Object.entries(payload.cli_settings)) {
           if (config && typeof config === 'object' && 'model' in config) {
             (config as any).model = normalizeModelId(cli, (config as any).model as string);
+          }
+          if (cli === 'codex' && config && typeof config === 'object') {
+            (config as any).reasoning_effort = normalizeCodexReasoningEffort(
+              (config as any).reasoning_effort as string | undefined
+            );
           }
         }
       }
@@ -273,6 +284,20 @@ export default function GlobalSettings({ isOpen, onClose, initialTab = 'general'
         [cliId]: {
           ...(prev?.cli_settings?.[cliId] ?? {}),
           model: normalizeModelId(cliId, modelId)
+        }
+      }
+    }));
+  };
+
+  const setDefaultReasoningEffort = (cliId: string, effort: string) => {
+    if (cliId !== 'codex') return;
+    setGlobalSettings(prev => ({
+      ...prev,
+      cli_settings: {
+        ...(prev?.cli_settings ?? {}),
+        [cliId]: {
+          ...(prev?.cli_settings?.[cliId] ?? {}),
+          reasoning_effort: normalizeCodexReasoningEffort(effort),
         }
       }
     }));
@@ -578,6 +603,20 @@ export default function GlobalSettings({ isOpen, onClose, initialTab = 'general'
                                 </option>
                               ))}
                             </select>
+
+                            {cli.id === 'codex' && (
+                              <select
+                                value={settings.reasoning_effort || 'high'}
+                                onChange={(e) => setDefaultReasoningEffort(cli.id, e.target.value)}
+                                className="w-full px-3 py-1.5 border border-gray-200/50 rounded-full bg-transparent hover:bg-gray-50 text-gray-700 text-xs font-medium transition-colors focus:outline-none focus:ring-0"
+                              >
+                                {CODEX_REASONING_DEFINITIONS.map((option) => (
+                                  <option key={option.id} value={option.id}>
+                                    Reasoning: {option.name}
+                                  </option>
+                                ))}
+                              </select>
+                            )}
 
                             {cli.id === 'glm' && (
                               <div className="space-y-1.5">

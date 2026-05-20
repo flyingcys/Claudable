@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { SendHorizontal, MessageSquare, Image as ImageIcon, Wrench } from 'lucide-react';
+import { CODEX_REASONING_DEFINITIONS } from '@/lib/constants/codexReasoning';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? '';
 
@@ -37,11 +38,14 @@ interface ChatInputProps {
   projectId?: string;
   preferredCli?: string;
   selectedModel?: string;
+  selectedReasoningEffort?: string;
   thinkingMode?: boolean;
   onThinkingModeChange?: (enabled: boolean) => void;
   modelOptions?: ModelPickerOption[];
   onModelChange?: (option: ModelPickerOption) => void;
   modelChangeDisabled?: boolean;
+  onReasoningEffortChange?: (effort: string) => void;
+  reasoningChangeDisabled?: boolean;
   cliOptions?: CliPickerOption[];
   onCliChange?: (cliId: string) => void;
   cliChangeDisabled?: boolean;
@@ -57,11 +61,14 @@ export default function ChatInput({
   projectId,
   preferredCli = 'claude',
   selectedModel = '',
+  selectedReasoningEffort = 'high',
   thinkingMode = false,
   onThinkingModeChange,
   modelOptions = [],
   onModelChange,
   modelChangeDisabled = false,
+  onReasoningEffortChange,
+  reasoningChangeDisabled = false,
   cliOptions = [],
   onCliChange,
   cliChangeDisabled = false,
@@ -102,6 +109,8 @@ export default function ChatInput({
   const selectedModelValue = useMemo(() => {
     return modelOptionsForCli.some(opt => opt.id === selectedModel) ? selectedModel : '';
   }, [modelOptionsForCli, selectedModel]);
+
+  const showReasoningPicker = preferredCli === 'codex';
 
   useEffect(() => {
     if (!disabled && !cliChangeDisabled && !modelChangeDisabled) {
@@ -517,6 +526,26 @@ export default function ChatInput({
                 ))}
               </select>
             </div>
+            {showReasoningPicker && (
+              <div className="flex flex-col text-[11px] text-gray-500 ">
+                <span>Reasoning</span>
+                <select
+                  value={selectedReasoningEffort}
+                  onChange={(e) => {
+                    onReasoningEffortChange?.(e.target.value);
+                    requestAnimationFrame(() => textareaRef.current?.focus());
+                  }}
+                  disabled={reasoningChangeDisabled || !onReasoningEffortChange}
+                  className="mt-1 w-32 rounded-md border border-gray-300 bg-white text-gray-700 text-xs py-1 px-2 focus:outline-none focus:ring-2 focus:ring-gray-300 disabled:opacity-60"
+                >
+                  {CODEX_REASONING_DEFINITIONS.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
         </div>
 

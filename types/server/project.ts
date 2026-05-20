@@ -27,6 +27,7 @@ export interface CreateProjectInput {
   initialPrompt: string;
   preferredCli?: string;
   selectedModel?: string;
+  selectedReasoningEffort?: string;
   description?: string;
 }
 
@@ -41,6 +42,7 @@ export interface UpdateProjectInput {
   previewPort?: number | null;
   preferredCli?: string;
   selectedModel?: string;
+  selectedReasoningEffort?: string | null;
   settings?: string;
   activeClaudeSessionId?: string;
   activeCursorSessionId?: string;

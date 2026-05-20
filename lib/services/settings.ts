@@ -1,6 +1,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { getDefaultModelForCli, normalizeModelId } from '@/lib/constants/cliModels';
+import { CODEX_DEFAULT_REASONING_EFFORT, normalizeCodexReasoningEffort } from '@/lib/constants/codexReasoning';
 
 const DATA_DIR = process.env.SETTINGS_DIR || path.join(process.cwd(), 'data');
 const SETTINGS_FILE = path.join(DATA_DIR, 'global-settings.json');
@@ -20,6 +21,7 @@ const DEFAULT_SETTINGS: GlobalSettings = {
     },
     codex: {
       model: getDefaultModelForCli('codex'),
+      reasoning_effort: CODEX_DEFAULT_REASONING_EFFORT,
     },
     cursor: {
       model: getDefaultModelForCli('cursor'),
@@ -102,6 +104,10 @@ export function normalizeCliSettings(settings: unknown): CLISettings | undefined
       const model = normalized[cli].model as string | undefined;
       if (model) {
         normalized[cli].model = normalizeModelId(cli, model);
+      }
+      if (cli === 'codex') {
+        const reasoningEffort = normalized[cli].reasoning_effort as string | undefined;
+        normalized[cli].reasoning_effort = normalizeCodexReasoningEffort(reasoningEffort);
       }
     }
   }

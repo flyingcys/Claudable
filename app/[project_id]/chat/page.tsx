@@ -14,6 +14,7 @@ import { ChatErrorBoundary } from '@/components/ErrorBoundary';
 import { useUserRequests } from '@/hooks/useUserRequests';
 import { useGlobalSettings } from '@/contexts/GlobalSettingsContext';
 import { getDefaultModelForCli, getModelDisplayName } from '@/lib/constants/cliModels';
+import { CODEX_DEFAULT_REASONING_EFFORT, normalizeCodexReasoningEffort } from '@/lib/constants/codexReasoning';
 import {
   ACTIVE_CLI_BRAND_COLORS,
   ACTIVE_CLI_IDS,
@@ -40,6 +41,8 @@ const CLI_ORDER = ACTIVE_CLI_IDS;
 const sanitizeCli = (cli?: string | null) => sanitizeActiveCli(cli, DEFAULT_ACTIVE_CLI);
 
 const sanitizeModel = (cli: string, model?: string | null) => normalizeModelForCli(cli, model, DEFAULT_ACTIVE_CLI);
+
+const sanitizeReasoningEffort = (effort?: string | null) => normalizeCodexReasoningEffort(effort);
 
 // Function to convert hex to CSS filter for tinting white images
 // Since the original image is white (#FFFFFF), we can apply filters more accurately
@@ -270,10 +273,12 @@ export default function ChatPage() {
   });
   const [preferredCli, setPreferredCli] = useState<ActiveCliId>(DEFAULT_ACTIVE_CLI);
   const [selectedModel, setSelectedModel] = useState<string>(getDefaultModelForCli(DEFAULT_ACTIVE_CLI));
+  const [selectedReasoningEffort, setSelectedReasoningEffort] = useState<string>(CODEX_DEFAULT_REASONING_EFFORT);
   const [usingGlobalDefaults, setUsingGlobalDefaults] = useState<boolean>(true);
   const [thinkingMode, setThinkingMode] = useState<boolean>(false);
   const [isUpdatingModel, setIsUpdatingModel] = useState<boolean>(false);
   const [currentRoute, setCurrentRoute] = useState<string>('/');
+  const { settings: globalSettings } = useGlobalSettings();
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const editorRef = useRef<HTMLTextAreaElement>(null);
   const highlightRef = useRef<HTMLPreElement>(null);
@@ -309,6 +314,14 @@ export default function ChatPage() {
     }
   }, [preferredCli]);
 
+  const updateSelectedReasoningEffort = useCallback((effort?: string | null) => {
+    const normalized = sanitizeReasoningEffort(effort);
+    setSelectedReasoningEffort(normalized);
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem('selectedReasoningEffort', normalized);
+    }
+  }, []);
+
   useEffect(() => {
     previewUrlRef.current = previewUrl;
   }, [previewUrl]);
@@ -335,6 +348,7 @@ export default function ChatPage() {
         conversationId: conversationId || undefined,
         requestId,
         selectedModel,
+        selectedReasoningEffort,
       };
 
       const r = await fetch(`${API_BASE}/api/chat/${projectId}/act`, {
@@ -386,7 +400,7 @@ export default function ChatPage() {
     } finally {
       setIsRunning(false);
     }
-  }, [initialPromptSent, preferredCli, conversationId, projectId, selectedModel, createRequest]);
+  }, [initialPromptSent, preferredCli, conversationId, projectId, selectedModel, selectedReasoningEffort, createRequest]);
 
   // Guarded trigger that can be called from multiple places safely
   const triggerInitialPromptIfNeeded = useCallback(() => {
@@ -431,7 +445,7 @@ const loadCliStatuses = useCallback(() => {
 }, []);
 
 const persistProjectPreferences = useCallback(
-  async (changes: { preferredCli?: string; selectedModel?: string }) => {
+  async (changes: { preferredCli?: string; selectedModel?: string; selectedReasoningEffort?: string | null }) => {
     if (!projectId) return;
     const payload: Record<string, unknown> = {};
     if (changes.preferredCli) {
@@ -444,6 +458,11 @@ const persistProjectPreferences = useCallback(
       const normalized = sanitizeModel(targetCli, changes.selectedModel);
       payload.selectedModel = normalized;
       payload.selected_model = normalized;
+    }
+    if (typeof changes.selectedReasoningEffort !== 'undefined') {
+      const normalized = sanitizeReasoningEffort(changes.selectedReasoningEffort);
+      payload.selectedReasoningEffort = normalized;
+      payload.selected_reasoning_effort = normalized;
     }
     if (Object.keys(payload).length === 0) return;
 
@@ -465,32 +484,44 @@ const persistProjectPreferences = useCallback(
 );
 
   const handleModelChange = useCallback(
-    async (option: ModelOption, opts?: { skipCliUpdate?: boolean; overrideCli?: string }) => {
+    async (option: ModelOption, opts?: { skipCliUpdate?: boolean; overrideCli?: string; overrideReasoningEffort?: string }) => {
       if (!projectId || !option) return;
 
-      const { skipCliUpdate = false, overrideCli } = opts || {};
+      const { skipCliUpdate = false, overrideCli, overrideReasoningEffort } = opts || {};
       const targetCli = sanitizeCli(overrideCli ?? option.cli);
       const sanitizedModelId = sanitizeModel(targetCli, option.id);
+      const nextReasoningEffort = sanitizeReasoningEffort(overrideReasoningEffort ?? selectedReasoningEffort);
 
       const previousCli = preferredCli;
       const previousModel = selectedModel;
+      const previousReasoningEffort = selectedReasoningEffort;
 
-      if (targetCli === previousCli && sanitizedModelId === previousModel) {
+      if (
+        targetCli === previousCli &&
+        sanitizedModelId === previousModel &&
+        (targetCli !== 'codex' || nextReasoningEffort === previousReasoningEffort)
+      ) {
         return;
       }
 
       setUsingGlobalDefaults(false);
       updatePreferredCli(targetCli);
       updateSelectedModel(option.id, targetCli);
+      if (targetCli === 'codex') {
+        updateSelectedReasoningEffort(nextReasoningEffort);
+      }
 
       setIsUpdatingModel(true);
 
       try {
-        const preferenceChanges: { preferredCli?: string; selectedModel?: string } = {
+        const preferenceChanges: { preferredCli?: string; selectedModel?: string; selectedReasoningEffort?: string } = {
           selectedModel: sanitizedModelId,
         };
         if (!skipCliUpdate && targetCli !== previousCli) {
           preferenceChanges.preferredCli = targetCli;
+        }
+        if (targetCli === 'codex') {
+          preferenceChanges.selectedReasoningEffort = nextReasoningEffort;
         }
 
         await persistProjectPreferences(preferenceChanges);
@@ -518,12 +549,24 @@ const persistProjectPreferences = useCallback(
         console.error('Failed to update model preference:', error);
         updatePreferredCli(previousCli);
         updateSelectedModel(previousModel, previousCli);
+        updateSelectedReasoningEffort(previousReasoningEffort);
         alert('Failed to update model. Please try again.');
       } finally {
         setIsUpdatingModel(false);
       }
     },
-    [projectId, preferredCli, selectedModel, conversationId, loadCliStatuses, persistProjectPreferences, updatePreferredCli, updateSelectedModel]
+    [
+      projectId,
+      preferredCli,
+      selectedModel,
+      selectedReasoningEffort,
+      conversationId,
+      loadCliStatuses,
+      persistProjectPreferences,
+      updatePreferredCli,
+      updateSelectedModel,
+      updateSelectedReasoningEffort,
+    ]
   );
 
   useEffect(() => {
@@ -538,36 +581,99 @@ const persistProjectPreferences = useCallback(
       setUsingGlobalDefaults(false);
 
       const candidateModels = modelOptions.filter(option => option.cli === cliId);
+      const nextReasoningEffort =
+        cliId === 'codex' && usingGlobalDefaults
+          ? sanitizeReasoningEffort(globalSettings?.cli_settings?.codex?.reasoning_effort)
+          : selectedReasoningEffort;
       const fallbackOption =
         candidateModels.find(option => option.id === selectedModel && option.available) ||
         candidateModels.find(option => option.available) ||
         candidateModels[0];
 
       if (fallbackOption) {
-        await handleModelChange(fallbackOption, { overrideCli: cliId });
+        await handleModelChange(fallbackOption, {
+          overrideCli: cliId,
+          ...(cliId === 'codex' ? { overrideReasoningEffort: nextReasoningEffort } : {}),
+        });
         return;
       }
 
       const previousCli = preferredCli;
       const previousModel = selectedModel;
+      const previousReasoningEffort = selectedReasoningEffort;
       setIsUpdatingModel(true);
 
       try {
         updatePreferredCli(cliId);
         const defaultModel = getDefaultModelForCli(cliId);
         updateSelectedModel(defaultModel, cliId);
-        await persistProjectPreferences({ preferredCli: cliId, selectedModel: defaultModel });
+        if (cliId === 'codex') {
+          updateSelectedReasoningEffort(nextReasoningEffort);
+        }
+        await persistProjectPreferences({
+          preferredCli: cliId,
+          selectedModel: defaultModel,
+          ...(cliId === 'codex' ? { selectedReasoningEffort: nextReasoningEffort } : {}),
+        });
         loadCliStatuses();
       } catch (error) {
         console.error('Failed to update CLI preference:', error);
         updatePreferredCli(previousCli);
         updateSelectedModel(previousModel, previousCli);
+        updateSelectedReasoningEffort(previousReasoningEffort);
         alert('Failed to update CLI. Please try again.');
       } finally {
         setIsUpdatingModel(false);
       }
     },
-    [projectId, preferredCli, selectedModel, modelOptions, handleModelChange, loadCliStatuses, persistProjectPreferences, updatePreferredCli, updateSelectedModel]
+    [
+      projectId,
+      preferredCli,
+      selectedModel,
+      selectedReasoningEffort,
+      modelOptions,
+      usingGlobalDefaults,
+      globalSettings,
+      handleModelChange,
+      loadCliStatuses,
+      persistProjectPreferences,
+      updatePreferredCli,
+      updateSelectedModel,
+      updateSelectedReasoningEffort,
+    ]
+  );
+
+  const handleReasoningEffortChange = useCallback(
+    async (effort: string) => {
+      if (!projectId || preferredCli !== 'codex') return;
+
+      const normalized = sanitizeReasoningEffort(effort);
+      if (normalized === selectedReasoningEffort) {
+        return;
+      }
+
+      const previousReasoningEffort = selectedReasoningEffort;
+      setUsingGlobalDefaults(false);
+      updateSelectedReasoningEffort(normalized);
+      setIsUpdatingModel(true);
+
+      try {
+        await persistProjectPreferences({ selectedReasoningEffort: normalized });
+      } catch (error) {
+        console.error('Failed to update reasoning preference:', error);
+        updateSelectedReasoningEffort(previousReasoningEffort);
+        alert('Failed to update reasoning. Please try again.');
+      } finally {
+        setIsUpdatingModel(false);
+      }
+    },
+    [
+      projectId,
+      preferredCli,
+      selectedReasoningEffort,
+      persistProjectPreferences,
+      updateSelectedReasoningEffort,
+    ]
   );
 
   useEffect(() => {
@@ -1423,6 +1529,9 @@ const persistProjectPreferences = useCallback(
             } else {
               updateSelectedModel(getDefaultModelForCli(cliToUse), cliToUse);
             }
+            if (cliToUse === 'codex') {
+              updateSelectedReasoningEffort(cliSettings?.reasoning_effort);
+            }
           }
         } else {
           const response = await fetch(`${API_BASE}/api/settings`);
@@ -1432,6 +1541,9 @@ const persistProjectPreferences = useCallback(
             if (!hasModelSet) {
               const cli = sanitizeCli(settings.preferred_cli || settings.default_cli || preferredCli || DEFAULT_ACTIVE_CLI);
               updateSelectedModel(getDefaultModelForCli(cli), cli);
+              if (cli === 'codex') {
+                updateSelectedReasoningEffort(CODEX_DEFAULT_REASONING_EFFORT);
+              }
             }
           }
         }
@@ -1443,7 +1555,7 @@ const persistProjectPreferences = useCallback(
       if (!hasCliSet) updatePreferredCli(DEFAULT_ACTIVE_CLI);
       if (!hasModelSet) updateSelectedModel(getDefaultModelForCli(DEFAULT_ACTIVE_CLI), DEFAULT_ACTIVE_CLI);
     }
-  }, [preferredCli, selectedModel, updatePreferredCli, updateSelectedModel]);
+  }, [preferredCli, selectedModel, updatePreferredCli, updateSelectedModel, updateSelectedReasoningEffort]);
 
   const loadProjectInfo = useCallback(async (): Promise<{ cli?: string; model?: string; status?: ProjectStatus }> => {
     try {
@@ -1473,10 +1585,17 @@ const persistProjectPreferences = useCallback(
           : typeof project?.selected_model === 'string'
           ? project.selected_model
           : undefined;
+      const rawSelectedReasoningEffort =
+        typeof project?.selectedReasoningEffort === 'string'
+          ? project.selectedReasoningEffort
+          : typeof project?.selected_reasoning_effort === 'string'
+          ? project.selected_reasoning_effort
+          : undefined;
 
       console.log('📋 Loading project info:', {
         preferredCli: rawPreferredCli,
         selectedModel: rawSelectedModel,
+        selectedReasoningEffort: rawSelectedReasoningEffort,
       });
 
       setProjectName(project.name || `Project ${projectId.slice(0, 8)}`);
@@ -1490,8 +1609,13 @@ const persistProjectPreferences = useCallback(
       } else {
         updateSelectedModel(getDefaultModelForCli(projectCli), projectCli);
       }
+      if (rawSelectedReasoningEffort) {
+        updateSelectedReasoningEffort(rawSelectedReasoningEffort);
+      } else if (projectCli === 'codex') {
+        updateSelectedReasoningEffort(CODEX_DEFAULT_REASONING_EFFORT);
+      }
 
-      const followGlobal = !rawPreferredCli && !rawSelectedModel;
+      const followGlobal = !rawPreferredCli && !rawSelectedModel && !rawSelectedReasoningEffort;
       setUsingGlobalDefaults(followGlobal);
       setProjectDescription(project.description || '');
 
@@ -1539,6 +1663,7 @@ const persistProjectPreferences = useCallback(
     triggerInitialPromptIfNeeded,
     updatePreferredCli,
     updateSelectedModel,
+    updateSelectedReasoningEffort,
     preferredCli,
   ]);
 
@@ -1693,13 +1818,14 @@ const persistProjectPreferences = useCallback(
     }
 
     // Create request fingerprint for deduplication
-    const requestFingerprint = JSON.stringify({
-      message: finalMessage.trim(),
-      imageCount: imagesToUse.length,
-      cliPreference: preferredCli,
-      model: selectedModel,
-      mode
-    });
+      const requestFingerprint = JSON.stringify({
+        message: finalMessage.trim(),
+        imageCount: imagesToUse.length,
+        cliPreference: preferredCli,
+        model: selectedModel,
+        reasoningEffort: selectedReasoningEffort,
+        mode
+      });
 
     // Check for duplicate pending requests
     if (pendingRequestsRef.current.has(requestFingerprint)) {
@@ -1819,6 +1945,7 @@ const persistProjectPreferences = useCallback(
         conversationId: conversationId || undefined,
         requestId,
         selectedModel,
+        selectedReasoningEffort,
       };
 
       console.log('📸 Sending request to act API:', {
@@ -2154,7 +2281,6 @@ const persistProjectPreferences = useCallback(
   }, []);
 
   // React to global settings changes when using global defaults
-  const { settings: globalSettings } = useGlobalSettings();
   useEffect(() => {
     if (!usingGlobalDefaults) return;
     if (!globalSettings) return;
@@ -2168,7 +2294,10 @@ const persistProjectPreferences = useCallback(
     } else {
       updateSelectedModel(getDefaultModelForCli(cli), cli);
     }
-  }, [globalSettings, usingGlobalDefaults, updatePreferredCli, updateSelectedModel]);
+    if (cli === 'codex') {
+      updateSelectedReasoningEffort(globalSettings.cli_settings?.codex?.reasoning_effort);
+    }
+  }, [globalSettings, usingGlobalDefaults, updatePreferredCli, updateSelectedModel, updateSelectedReasoningEffort]);
 
 
   // Show loading UI if project is initializing
@@ -2318,11 +2447,14 @@ const persistProjectPreferences = useCallback(
                 projectId={projectId}
                 preferredCli={preferredCli}
                 selectedModel={selectedModel}
+                selectedReasoningEffort={selectedReasoningEffort}
                 thinkingMode={thinkingMode}
                 onThinkingModeChange={setThinkingMode}
                 modelOptions={modelOptions}
                 onModelChange={handleModelChange}
                 modelChangeDisabled={isUpdatingModel}
+                onReasoningEffortChange={handleReasoningEffortChange}
+                reasoningChangeDisabled={isUpdatingModel}
                 cliOptions={cliOptions}
                 onCliChange={handleCliChange}
                 cliChangeDisabled={isUpdatingModel}

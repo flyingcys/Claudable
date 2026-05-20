@@ -4,6 +4,16 @@ import { useRouter } from 'next/navigation';
 import { AnimatePresence } from 'framer-motion';
 import { MotionDiv, MotionP } from '@/lib/motion';
 import { getModelDefinitionsForCli, getDefaultModelForCli, normalizeModelId } from '@/lib/constants/cliModels';
+import {
+  CODEX_DEFAULT_REASONING_EFFORT,
+  CODEX_REASONING_DEFINITIONS,
+  normalizeCodexReasoningEffort,
+} from '@/lib/constants/codexReasoning';
+import {
+  getEffectiveCreateProjectCli,
+  getEffectiveCreateProjectReasoningEffort,
+  shouldShowCreateProjectReasoning,
+} from '@/lib/constants/createProjectModalHelpers';
 import { fetchCliStatusSnapshot, createCliStatusFallback } from '@/hooks/useCLI';
 import type { CLIStatus } from '@/types/cli';
 
@@ -16,6 +26,7 @@ const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? '';
 const DEFAULT_MODEL_ID = getDefaultModelForCli('claude');
 
 const sanitizeModel = (cli: string, model?: string | null) => normalizeModelId(cli, model);
+const sanitizeReasoningEffort = (effort?: string | null) => normalizeCodexReasoningEffort(effort);
 
 const CLI_OPTIONS: CLIOption[] = [
   {
@@ -120,6 +131,7 @@ export default function CreateProjectModal({ open, onClose, onCreated, onOpenGlo
   const [prompt, setPrompt] = useState('');
   const [selectedCLI, setSelectedCLI] = useState<string>('claude');
   const [selectedModel, setSelectedModel] = useState<string>(DEFAULT_MODEL_ID);
+  const [selectedReasoningEffort, setSelectedReasoningEffort] = useState<string>(CODEX_DEFAULT_REASONING_EFFORT);
   // Fallback is removed but kept for backward compatibility
   const [fallbackEnabled, setFallbackEnabled] = useState(false);
   const [useDefaultSettings, setUseDefaultSettings] = useState(true);
@@ -137,6 +149,7 @@ export default function CreateProjectModal({ open, onClose, onCreated, onOpenGlo
   const [showWebsiteInput, setShowWebsiteInput] = useState(false);
   const [showCLIDropdown, setShowCLIDropdown] = useState(false);
   const [showModelDropdown, setShowModelDropdown] = useState(false);
+  const [showReasoningDropdown, setShowReasoningDropdown] = useState(false);
   const router = useRouter();
 
   const loadGlobalSettings = useCallback(async () => {
@@ -155,6 +168,11 @@ export default function CreateProjectModal({ open, onClose, onCreated, onOpenGlo
           for (const [cli, config] of Object.entries(settings.cli_settings)) {
             if (config && typeof config === 'object' && 'model' in config && config.model) {
               config.model = sanitizeModel(cli, config.model as string);
+            }
+            if (cli === 'codex' && config && typeof config === 'object') {
+              (config as any).reasoning_effort = sanitizeReasoningEffort(
+                (config as any).reasoning_effort as string | undefined
+              );
             }
           }
         }
@@ -177,6 +195,7 @@ export default function CreateProjectModal({ open, onClose, onCreated, onOpenGlo
           effectiveCLIs.find((cli) => cli.id === defaultCLI)?.id ?? effectiveCLIs[0]?.id ?? 'claude';
         setSelectedCLI(preferredCLI);
         setFallbackEnabled(settings.fallback_enabled ?? true);
+        setSelectedReasoningEffort(sanitizeReasoningEffort(settings.cli_settings?.codex?.reasoning_effort));
 
         const preferredModelSetting = settings.cli_settings?.[preferredCLI]?.model;
         if (preferredModelSetting) {
@@ -197,6 +216,7 @@ export default function CreateProjectModal({ open, onClose, onCreated, onOpenGlo
         setSelectedCLI(fallbackCLI);
         const fallbackModel = effectiveCLIs[0]?.models[0]?.id ?? DEFAULT_MODEL_ID;
         setSelectedModel(sanitizeModel(fallbackCLI, fallbackModel));
+        setSelectedReasoningEffort(CODEX_DEFAULT_REASONING_EFFORT);
         setFallbackEnabled(true);
       }
     } catch (error) {
@@ -208,6 +228,7 @@ export default function CreateProjectModal({ open, onClose, onCreated, onOpenGlo
       setSelectedCLI(fallbackCLI);
       const fallbackModel = available[0]?.models[0]?.id ?? DEFAULT_MODEL_ID;
       setSelectedModel(sanitizeModel(fallbackCLI, fallbackModel));
+      setSelectedReasoningEffort(CODEX_DEFAULT_REASONING_EFFORT);
       setFallbackEnabled(true);
     }
   }, []);
@@ -221,6 +242,17 @@ export default function CreateProjectModal({ open, onClose, onCreated, onOpenGlo
 
   const selectedCLIOption = enabledCLIs.find(cli => cli.id === selectedCLI);
   const selectedModelOption = selectedCLIOption?.models.find(model => model.id === selectedModel);
+  const effectiveCli = getEffectiveCreateProjectCli(useDefaultSettings, selectedCLI, globalSettings);
+  const showReasoningSelector = shouldShowCreateProjectReasoning(useDefaultSettings, selectedCLI, globalSettings);
+  const effectiveReasoningEffort = getEffectiveCreateProjectReasoningEffort(
+    useDefaultSettings,
+    selectedCLI,
+    selectedReasoningEffort,
+    globalSettings,
+  );
+  const selectedReasoningOption = CODEX_REASONING_DEFINITIONS.find(
+    (option) => option.id === effectiveReasoningEffort
+  );
 
   // WebSocket connection for project initialization
   const connectToProjectWebSocket = (projectId: string) => {
@@ -338,9 +370,11 @@ export default function CreateProjectModal({ open, onClose, onCreated, onOpenGlo
       setFallbackEnabled(globalSettings.fallback_enabled ?? true);
       const cliSettings = globalSettings.cli_settings?.[globalSettings.default_cli || 'claude'];
       setSelectedModel(sanitizeModel(globalSettings.default_cli || 'claude', cliSettings?.model));
+      setSelectedReasoningEffort(sanitizeReasoningEffort(globalSettings.cli_settings?.codex?.reasoning_effort));
     } else {
       setSelectedCLI('claude');
       setSelectedModel(DEFAULT_MODEL_ID);
+      setSelectedReasoningEffort(CODEX_DEFAULT_REASONING_EFFORT);
       setFallbackEnabled(true);
     }
     
@@ -373,6 +407,9 @@ export default function CreateProjectModal({ open, onClose, onCreated, onOpenGlo
     if (cli?.models.length) {
       setSelectedModel(sanitizeModel(cliId, cli.models[0].id));
     }
+    if (cliId === 'codex' && globalSettings?.cli_settings?.codex?.reasoning_effort) {
+      setSelectedReasoningEffort(sanitizeReasoningEffort(globalSettings.cli_settings.codex.reasoning_effort));
+    }
     setShowCLIDropdown(false);
   };
 
@@ -382,17 +419,25 @@ export default function CreateProjectModal({ open, onClose, onCreated, onOpenGlo
     setShowModelDropdown(false);
   };
 
+  const handleReasoningChange = (effort: string) => {
+    setUseDefaultSettings(false);
+    setSelectedReasoningEffort(sanitizeReasoningEffort(effort));
+    setShowReasoningDropdown(false);
+  };
+
   async function submit() {
     if (!projectName.trim() || !prompt.trim()) return;
     
     // Determine CLI and model based on useDefaultSettings
     let finalCLI = selectedCLI;
     let finalModel = selectedModel;
+    let finalReasoningEffort = selectedReasoningEffort;
     
     if (useDefaultSettings && globalSettings) {
       finalCLI = globalSettings.default_cli || 'claude';
       const cliSettings = globalSettings.cli_settings?.[finalCLI];
       finalModel = sanitizeModel(finalCLI, cliSettings?.model || selectedModel || DEFAULT_MODEL_ID);
+      finalReasoningEffort = sanitizeReasoningEffort(globalSettings.cli_settings?.codex?.reasoning_effort);
     }
     
     if (!finalCLI || !finalModel) {
@@ -428,9 +473,11 @@ export default function CreateProjectModal({ open, onClose, onCreated, onOpenGlo
         preferredCli: finalCLI,
         fallbackEnabled,
         selectedModel: finalModel,
+        ...(finalCLI === 'codex' ? { selectedReasoningEffort: finalReasoningEffort } : {}),
         cli_settings: {
           [finalCLI]: {
-            model: finalModel
+            model: finalModel,
+            ...(finalCLI === 'codex' ? { reasoning_effort: finalReasoningEffort } : {}),
           }
         }
       };
@@ -754,129 +801,181 @@ export default function CreateProjectModal({ open, onClose, onCreated, onOpenGlo
             </div>
 
             {/* AI Selection Dropdowns */}
-            {!useDefaultSettings && (
+            {(!useDefaultSettings || showReasoningSelector) && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* CLI Selection Dropdown */}
-                <div className="relative">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    AI Assistant
-                  </label>
-                  <div className="relative">
-                    <button
-                      onClick={() => setShowCLIDropdown(!showCLIDropdown)}
-                      className="w-full p-3 bg-white border border-gray-200 rounded-lg text-left flex items-center justify-between hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <div className="flex items-center gap-3">
-                        <span className="text-lg">{selectedCLIOption?.icon}</span>
-                        <div>
-                          <div className="font-medium text-gray-900 ">{selectedCLIOption?.name}</div>
-                          <div className="text-xs text-gray-500 ">{selectedCLIOption?.description}</div>
-                        </div>
-                      </div>
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className={`transition-transform ${showCLIDropdown ? 'rotate-180' : ''}`}>
-                        <path d="M6 9l6 6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                      </svg>
-                    </button>
-
-                    <AnimatePresence>
-                      {showCLIDropdown && (
-                        <MotionDiv
-                          initial={{ opacity: 0, y: -10 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0, y: -10 }}
-                          className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 max-h-60 overflow-y-auto"
+                {!useDefaultSettings && (
+                  <>
+                    {/* CLI Selection Dropdown */}
+                    <div className="relative">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        AI Assistant
+                      </label>
+                      <div className="relative">
+                        <button
+                          onClick={() => setShowCLIDropdown(!showCLIDropdown)}
+                          className="w-full p-3 bg-white border border-gray-200 rounded-lg text-left flex items-center justify-between hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
                         >
-                          {enabledCLIs.map((cli) => {
-                            const cliStatusInfo = cliStatus?.[cli.id];
-                            const isInstalled = cliStatusInfo?.installed ?? true;
-                            
-                            return (
-                              <button
-                                key={cli.id}
-                                onClick={() => handleCLIChange(cli.id)}
-                                className="w-full p-3 text-left hover:bg-gray-50 flex items-center gap-3 border-b border-gray-100 last:border-b-0"
-                              >
-                                <span className="text-lg">{cli.icon}</span>
-                                <div className="flex-1">
-                                  <div className="flex items-center gap-2">
-                                    <div className="font-medium text-gray-900 ">{cli.name}</div>
-                                    {isInstalled ? (
+                          <div className="flex items-center gap-3">
+                            <span className="text-lg">{selectedCLIOption?.icon}</span>
+                            <div>
+                              <div className="font-medium text-gray-900 ">{selectedCLIOption?.name}</div>
+                              <div className="text-xs text-gray-500 ">{selectedCLIOption?.description}</div>
+                            </div>
+                          </div>
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className={`transition-transform ${showCLIDropdown ? 'rotate-180' : ''}`}>
+                            <path d="M6 9l6 6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                          </svg>
+                        </button>
+
+                        <AnimatePresence>
+                          {showCLIDropdown && (
+                            <MotionDiv
+                              initial={{ opacity: 0, y: -10 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              exit={{ opacity: 0, y: -10 }}
+                              className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 max-h-60 overflow-y-auto"
+                            >
+                              {enabledCLIs.map((cli) => {
+                                const cliStatusInfo = cliStatus?.[cli.id];
+                                const isInstalled = cliStatusInfo?.installed ?? true;
+                                
+                                return (
+                                  <button
+                                    key={cli.id}
+                                    onClick={() => handleCLIChange(cli.id)}
+                                    className="w-full p-3 text-left hover:bg-gray-50 flex items-center gap-3 border-b border-gray-100 last:border-b-0"
+                                  >
+                                    <span className="text-lg">{cli.icon}</span>
+                                    <div className="flex-1">
+                                      <div className="flex items-center gap-2">
+                                        <div className="font-medium text-gray-900 ">{cli.name}</div>
+                                        {isInstalled ? (
+                                          <span className="text-xs bg-green-100 text-green-600 px-2 py-1 rounded-full">
+                                            ✓
+                                          </span>
+                                        ) : (
+                                          <span className="text-xs bg-yellow-100 text-yellow-600 px-2 py-1 rounded-full">
+                                            !
+                                          </span>
+                                        )}
+                                      </div>
+                                      <div className="text-xs text-gray-500 ">{cli.description}</div>
+                                    </div>
+                                  </button>
+                                );
+                              })}
+                            </MotionDiv>
+                          )}
+                        </AnimatePresence>
+                      </div>
+                    </div>
+
+                    {/* Model Selection Dropdown */}
+                    <div className="relative">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Model
+                      </label>
+                      <div className="relative">
+                        <button
+                          onClick={() => setShowModelDropdown(!showModelDropdown)}
+                          className="w-full p-3 bg-white border border-gray-200 rounded-lg text-left flex items-center justify-between hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        >
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <div className="font-medium text-gray-900 ">{selectedModelOption?.name}</div>
+                              {selectedModelOption?.supportsImages && (
+                                <span className="text-xs bg-green-100 text-green-600 px-2 py-1 rounded-full">
+                                  📷
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-xs text-gray-500 ">{selectedModelOption?.description}</div>
+                          </div>
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className={`transition-transform ${showModelDropdown ? 'rotate-180' : ''}`}>
+                            <path d="M6 9l6 6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                          </svg>
+                        </button>
+
+                        <AnimatePresence>
+                          {showModelDropdown && selectedCLIOption && (
+                            <MotionDiv
+                              initial={{ opacity: 0, y: -10 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              exit={{ opacity: 0, y: -10 }}
+                              className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 max-h-60 overflow-y-auto"
+                            >
+                              {selectedCLIOption.models.map((model) => (
+                                <button
+                                  key={model.id}
+                                  onClick={() => handleModelChange(model.id)}
+                                  className="w-full p-3 text-left hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
+                                >
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <div className="font-medium text-gray-900 ">{model.name}</div>
+                                    {model.supportsImages && (
                                       <span className="text-xs bg-green-100 text-green-600 px-2 py-1 rounded-full">
-                                        ✓
-                                      </span>
-                                    ) : (
-                                      <span className="text-xs bg-yellow-100 text-yellow-600 px-2 py-1 rounded-full">
-                                        !
+                                        📷
                                       </span>
                                     )}
                                   </div>
-                                  <div className="text-xs text-gray-500 ">{cli.description}</div>
-                                </div>
-                              </button>
-                            );
-                          })}
-                        </MotionDiv>
-                      )}
-                    </AnimatePresence>
-                  </div>
-                </div>
-
-                {/* Model Selection Dropdown */}
-                <div className="relative">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Model
-                  </label>
-                  <div className="relative">
-                    <button
-                      onClick={() => setShowModelDropdown(!showModelDropdown)}
-                      className="w-full p-3 bg-white border border-gray-200 rounded-lg text-left flex items-center justify-between hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <div className="font-medium text-gray-900 ">{selectedModelOption?.name}</div>
-                          {selectedModelOption?.supportsImages && (
-                            <span className="text-xs bg-green-100 text-green-600 px-2 py-1 rounded-full">
-                              📷
-                            </span>
+                                  <div className="text-xs text-gray-500 ">{model.description}</div>
+                                </button>
+                              ))}
+                            </MotionDiv>
                           )}
-                        </div>
-                        <div className="text-xs text-gray-500 ">{selectedModelOption?.description}</div>
+                        </AnimatePresence>
                       </div>
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className={`transition-transform ${showModelDropdown ? 'rotate-180' : ''}`}>
-                        <path d="M6 9l6 6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                      </svg>
-                    </button>
+                    </div>
+                  </>
+                )}
 
-                    <AnimatePresence>
-                      {showModelDropdown && selectedCLIOption && (
-                        <MotionDiv
-                          initial={{ opacity: 0, y: -10 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0, y: -10 }}
-                          className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 max-h-60 overflow-y-auto"
-                        >
-                          {selectedCLIOption.models.map((model) => (
-                            <button
-                              key={model.id}
-                              onClick={() => handleModelChange(model.id)}
-                              className="w-full p-3 text-left hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
-                            >
-                              <div className="flex items-center gap-2 mb-1">
-                                <div className="font-medium text-gray-900 ">{model.name}</div>
-                                {model.supportsImages && (
-                                  <span className="text-xs bg-green-100 text-green-600 px-2 py-1 rounded-full">
-                                    📷
-                                  </span>
-                                )}
-                              </div>
-                              <div className="text-xs text-gray-500 ">{model.description}</div>
-                            </button>
-                          ))}
-                        </MotionDiv>
-                      )}
-                    </AnimatePresence>
+                {showReasoningSelector && (
+                  <div className="relative">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Reasoning
+                    </label>
+                    <div className="relative">
+                      <button
+                        onClick={() => setShowReasoningDropdown(!showReasoningDropdown)}
+                        className="w-full p-3 bg-white border border-gray-200 rounded-lg text-left flex items-center justify-between hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        <div>
+                          <div className="font-medium text-gray-900 ">{selectedReasoningOption?.name}</div>
+                          <div className="text-xs text-gray-500 ">Control Codex reasoning effort</div>
+                        </div>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className={`transition-transform ${showReasoningDropdown ? 'rotate-180' : ''}`}>
+                          <path d="M6 9l6 6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
+                      </button>
+
+                      <AnimatePresence>
+                        {showReasoningDropdown && (
+                          <MotionDiv
+                            initial={{ opacity: 0, y: -10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -10 }}
+                            className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 max-h-60 overflow-y-auto"
+                          >
+                            {CODEX_REASONING_DEFINITIONS.map((option) => (
+                              <button
+                                key={option.id}
+                                onClick={() => handleReasoningChange(option.id)}
+                                className="w-full p-3 text-left hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
+                              >
+                                <div className="font-medium text-gray-900 ">{option.name}</div>
+                              </button>
+                            ))}
+                          </MotionDiv>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                    {useDefaultSettings && effectiveCli === 'codex' && (
+                      <p className="mt-2 text-xs text-gray-500">
+                        Using the current global Codex reasoning default. Picking a different value here will switch to custom AI settings.
+                      </p>
+                    )}
                   </div>
-                </div>
+                )}
               </div>
             )}
 

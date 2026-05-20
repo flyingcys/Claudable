@@ -7,6 +7,11 @@ import DeleteProjectModal from '@/components/modals/DeleteProjectModal';
 import GlobalSettings from '@/components/settings/GlobalSettings';
 import { useGlobalSettings } from '@/contexts/GlobalSettingsContext';
 import { getDefaultModelForCli, getModelDisplayName } from '@/lib/constants/cliModels';
+import {
+  CODEX_DEFAULT_REASONING_EFFORT,
+  CODEX_REASONING_DEFINITIONS,
+  normalizeCodexReasoningEffort,
+} from '@/lib/constants/codexReasoning';
 import Image from 'next/image';
 import { Image as ImageIcon } from 'lucide-react';
 import type { Project as ProjectSummary } from '@/types/project';
@@ -83,11 +88,16 @@ export default function HomePage() {
   }, [sanitizeAssistant, normalizeModelForAssistant]);
   const [selectedAssistant, setSelectedAssistant] = useState<ActiveCliId>(DEFAULT_ASSISTANT);
   const [selectedModel, setSelectedModel] = useState(DEFAULT_MODEL);
+  const [selectedReasoningEffort, setSelectedReasoningEffort] = useState(CODEX_DEFAULT_REASONING_EFFORT);
   const [usingGlobalDefaults, setUsingGlobalDefaults] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [cliStatus, setCLIStatus] = useState<CLIStatus>({});
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const selectedAssistantOption = ACTIVE_CLI_OPTIONS_MAP[selectedAssistant];
+  const selectedReasoningOption =
+    CODEX_REASONING_DEFINITIONS.find(option => option.id === selectedReasoningEffort) ??
+    CODEX_REASONING_DEFINITIONS[1];
+  const showReasoningSelector = selectedAssistant === 'codex';
   
   // Get available models based on current assistant
   const availableModels = MODEL_OPTIONS_BY_ASSISTANT[selectedAssistant] || [];
@@ -108,12 +118,14 @@ export default function HomePage() {
       // Navigation within session - check for stored selections
       const storedAssistantRaw = sessionStorage.getItem('selectedAssistant');
       const storedModelRaw = sessionStorage.getItem('selectedModel');
+      const storedReasoningEffortRaw = sessionStorage.getItem('selectedReasoningEffort');
 
       if (storedModelRaw) {
         const storedAssistant = sanitizeAssistant(storedAssistantRaw);
         const storedModel = normalizeModelForAssistant(storedAssistant, storedModelRaw);
         setSelectedAssistant(storedAssistant);
         setSelectedModel(storedModel);
+        setSelectedReasoningEffort(normalizeCodexReasoningEffort(storedReasoningEffortRaw));
         setUsingGlobalDefaults(false);
         setIsInitialLoad(false);
         return;
@@ -134,6 +146,11 @@ export default function HomePage() {
     setSelectedAssistant(cli);
     const modelFromGlobal = globalSettings?.cli_settings?.[cli]?.model;
     setSelectedModel(normalizeModelForAssistant(cli, modelFromGlobal));
+    setSelectedReasoningEffort(
+      cli === 'codex'
+        ? normalizeCodexReasoningEffort(globalSettings?.cli_settings?.codex?.reasoning_effort)
+        : CODEX_DEFAULT_REASONING_EFFORT
+    );
   }, [globalSettings, usingGlobalDefaults, isInitialLoad, sanitizeAssistant, normalizeModelForAssistant]);
   
   // Save selections to sessionStorage when they change
@@ -142,8 +159,9 @@ export default function HomePage() {
       const normalizedAssistant = sanitizeAssistant(selectedAssistant);
       sessionStorage.setItem('selectedAssistant', normalizedAssistant);
       sessionStorage.setItem('selectedModel', normalizeModelForAssistant(normalizedAssistant, selectedModel));
+      sessionStorage.setItem('selectedReasoningEffort', normalizeCodexReasoningEffort(selectedReasoningEffort));
     }
-  }, [selectedAssistant, selectedModel, isInitialLoad, sanitizeAssistant, normalizeModelForAssistant]);
+  }, [selectedAssistant, selectedModel, selectedReasoningEffort, isInitialLoad, sanitizeAssistant, normalizeModelForAssistant]);
   
   // Clear navigation flag on page unload
   useEffect(() => {
@@ -156,6 +174,7 @@ export default function HomePage() {
   }, []);
   const [showAssistantDropdown, setShowAssistantDropdown] = useState(false);
   const [showModelDropdown, setShowModelDropdown] = useState(false);
+  const [showReasoningDropdown, setShowReasoningDropdown] = useState(false);
   const [isCreatingProject, setIsCreatingProject] = useState(false);
   const [uploadedImages, setUploadedImages] = useState<{ id: string; name: string; url: string; path: string; file?: File }[]>([]);
   const [isUploading, setIsUploading] = useState(false);
@@ -165,6 +184,7 @@ export default function HomePage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const assistantDropdownRef = useRef<HTMLDivElement>(null);
   const modelDropdownRef = useRef<HTMLDivElement>(null);
+  const reasoningDropdownRef = useRef<HTMLDivElement>(null);
 
   // Check CLI installation status
   useEffect(() => {
@@ -200,6 +220,11 @@ export default function HomePage() {
       const modelEl = modelDropdownRef.current;
       if (modelEl && !modelEl.contains(target)) {
         setShowModelDropdown(false);
+      }
+
+      const reasoningEl = reasoningDropdownRef.current;
+      if (reasoningEl && !reasoningEl.contains(target)) {
+        setShowReasoningDropdown(false);
       }
     };
 
@@ -487,7 +512,10 @@ export default function HomePage() {
           name: prompt.slice(0, 50) + (prompt.length > 50 ? '...' : ''),
           initialPrompt: prompt.trim(),
           preferredCli: selectedAssistant,
-          selectedModel
+          selectedModel,
+          ...(selectedAssistant === 'codex'
+            ? { selectedReasoningEffort: normalizeCodexReasoningEffort(selectedReasoningEffort) }
+            : {}),
         })
       });
       
@@ -560,7 +588,10 @@ export default function HomePage() {
               images: imageData,
               isInitialPrompt: true,
               cliPreference: selectedAssistant,
-              selectedModel
+              selectedModel,
+              ...(selectedAssistant === 'codex'
+                ? { selectedReasoningEffort: normalizeCodexReasoningEffort(selectedReasoningEffort) }
+                : {}),
             })
           });
           
@@ -658,8 +689,14 @@ export default function HomePage() {
     setIsInitialLoad(false);
     setSelectedAssistant(sanitized);
     setSelectedModel(getDefaultModelForCli(sanitized));
+    setSelectedReasoningEffort(
+      sanitized === 'codex'
+        ? normalizeCodexReasoningEffort(globalSettings?.cli_settings?.codex?.reasoning_effort)
+        : CODEX_DEFAULT_REASONING_EFFORT
+    );
 
     setShowAssistantDropdown(false);
+    setShowReasoningDropdown(false);
   };
 
   const handleModelChange = (modelId: string) => {
@@ -667,6 +704,13 @@ export default function HomePage() {
     setIsInitialLoad(false);
     setSelectedModel(normalizeModelForAssistant(selectedAssistant, modelId));
     setShowModelDropdown(false);
+  };
+
+  const handleReasoningChange = (effort: string) => {
+    setUsingGlobalDefaults(false);
+    setIsInitialLoad(false);
+    setSelectedReasoningEffort(normalizeCodexReasoningEffort(effort));
+    setShowReasoningDropdown(false);
   };
 
 
@@ -1089,6 +1133,7 @@ export default function HomePage() {
                     onClick={() => {
                       setShowModelDropdown((current) => !current);
                       setShowAssistantDropdown(false);
+                      setShowReasoningDropdown(false);
                     }}
                     className="justify-center whitespace-nowrap text-sm font-medium transition-colors duration-100 ease-in-out focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50 border border-gray-200/50 bg-transparent shadow-sm hover:bg-gray-50 hover:border-gray-300/50 px-3 py-2 flex h-8 items-center gap-1 rounded-full text-gray-700 hover:text-gray-900 focus-visible:ring-0 min-w-[140px]"
                   >
@@ -1118,6 +1163,45 @@ export default function HomePage() {
                     </div>
                   )}
                 </div>
+
+                {showReasoningSelector && (
+                  <div className="relative z-[200]" ref={reasoningDropdownRef}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowReasoningDropdown((current) => !current);
+                        setShowAssistantDropdown(false);
+                        setShowModelDropdown(false);
+                      }}
+                      className="justify-center whitespace-nowrap text-sm font-medium transition-colors duration-100 ease-in-out focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50 border border-gray-200/50 bg-transparent shadow-sm hover:bg-gray-50 hover:border-gray-300/50 px-3 py-2 flex h-8 items-center gap-1 rounded-full text-gray-700 hover:text-gray-900 focus-visible:ring-0 min-w-[140px]"
+                    >
+                      <span className="text-sm font-medium whitespace-nowrap">
+                        {selectedReasoningOption?.name ?? 'High'}
+                      </span>
+                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 -960 960 960" className="shrink-0 h-3 w-3 rotate-90 ml-auto" fill="currentColor">
+                        <path d="M530-481 353-658q-9-9-8.5-21t9.5-21 21.5-9 21.5 9l198 198q5 5 7 10t2 11-2 11-7 10L396-261q-9 9-21 8.5t-21-9.5-9-21.5 9-21.5z"/>
+                      </svg>
+                    </button>
+
+                    {showReasoningDropdown && (
+                      <div className="absolute top-full mt-1 left-0 z-[300] min-w-full max-h-[300px] overflow-y-auto rounded-2xl border border-gray-200 bg-white backdrop-blur-xl shadow-lg">
+                        {CODEX_REASONING_DEFINITIONS.map((option) => (
+                          <button
+                            key={option.id}
+                            onClick={() => handleReasoningChange(option.id)}
+                            className={`w-full px-3 py-2 text-left first:rounded-t-2xl last:rounded-b-2xl transition-colors ${
+                              selectedReasoningEffort === option.id
+                                ? 'bg-gray-100 text-black font-semibold'
+                                : 'text-gray-800 hover:text-black hover:bg-gray-100 '
+                            }`}
+                          >
+                            <span className="text-sm font-medium">{option.name}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
                 
                 {/* Send Button */}
                 <div className="ml-auto flex items-center gap-1">

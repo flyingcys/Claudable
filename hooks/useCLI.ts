@@ -5,6 +5,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { CLIOption, CLIStatus, CLIPreference, CLI_OPTIONS } from '@/types/cli';
 import { getDefaultModelForCli } from '@/lib/constants/cliModels';
+import { normalizeCodexReasoningEffort } from '@/lib/constants/codexReasoning';
 import { DEFAULT_ACTIVE_CLI, normalizeModelForCli, sanitizeActiveCli } from '@/lib/utils/cliOptions';
 
 interface UseCLIOptions {
@@ -90,11 +91,18 @@ export function useCLI({ projectId }: UseCLIOptions) {
         ? data.selected_model
         : undefined;
     const normalizedModel = normalizeModelForCli(preferredCli, rawModel, preferredCli);
+    const rawReasoningEffort =
+      typeof data?.selectedReasoningEffort === 'string'
+        ? data.selectedReasoningEffort
+        : typeof data?.selected_reasoning_effort === 'string'
+        ? data.selected_reasoning_effort
+        : undefined;
 
     return {
       preferredCli,
       fallbackEnabled,
       selectedModel: normalizedModel || getDefaultModelForCli(preferredCli),
+      selectedReasoningEffort: normalizeCodexReasoningEffort(rawReasoningEffort),
     };
   }, []);
 
@@ -112,10 +120,11 @@ export function useCLI({ projectId }: UseCLIOptions) {
     setPreference(parsePreference(project));
   } catch (error) {
     console.error('Failed to load CLI preference:', error);
-    setPreference({
-      preferredCli: DEFAULT_ACTIVE_CLI,
-      fallbackEnabled: false,
-      selectedModel: getDefaultModelForCli(DEFAULT_ACTIVE_CLI),
+      setPreference({
+        preferredCli: DEFAULT_ACTIVE_CLI,
+        fallbackEnabled: false,
+        selectedModel: getDefaultModelForCli(DEFAULT_ACTIVE_CLI),
+        selectedReasoningEffort: normalizeCodexReasoningEffort(undefined),
     });
   }
 }, [projectId, parsePreference]);
@@ -184,6 +193,10 @@ export function useCLI({ projectId }: UseCLIOptions) {
           preferredCli: responseCli,
           fallbackEnabled: prev?.fallbackEnabled ?? false,
           selectedModel: normalizedSelected,
+          selectedReasoningEffort:
+            typeof project.selectedReasoningEffort === 'string'
+              ? normalizeCodexReasoningEffort(project.selectedReasoningEffort)
+              : prev?.selectedReasoningEffort ?? normalizeCodexReasoningEffort(undefined),
         };
       });
       return project;
@@ -222,6 +235,10 @@ export function useCLI({ projectId }: UseCLIOptions) {
         preferredCli: cliForNormalization,
         fallbackEnabled: prev?.fallbackEnabled ?? false,
         selectedModel: normalized,
+        selectedReasoningEffort:
+          typeof project.selectedReasoningEffort === 'string'
+            ? normalizeCodexReasoningEffort(project.selectedReasoningEffort)
+            : prev?.selectedReasoningEffort ?? normalizeCodexReasoningEffort(undefined),
       }));
 
       return project;
