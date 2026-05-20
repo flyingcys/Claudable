@@ -1,10 +1,13 @@
-import {
+import type { RegistryModelDefinition } from './modelRegistry';
+
+type ModelRegistryModule = typeof import('./modelRegistry');
+
+const {
   getCliModelConfig,
   getDefaultModelForCli,
   getModelDisplayName,
   normalizeModelId,
-  type RegistryModelDefinition,
-} from './modelRegistry.ts';
+}: ModelRegistryModule = await import(new URL('./modelRegistry.ts', import.meta.url).href);
 
 export type QwenModelId = string;
 
