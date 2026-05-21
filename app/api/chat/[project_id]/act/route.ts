@@ -28,6 +28,7 @@ import { serializeMessage } from '@/lib/serializers/chat';
 import {
   upsertUserRequest,
   markUserRequestAsProcessing,
+  markUserRequestAsFailed,
 } from '@/lib/services/user-requests';
 
 interface RouteContext {
@@ -375,7 +376,7 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
 
     await updateProjectActivity(project_id);
 
-    const projectPath = project.repoPath || path.join(process.cwd(), 'projects', project_id);
+    const projectPath = resolveProjectRoot(project_id, project.repoPath);
 
     const existingSelected = normalizeModelId(project.preferredCli ?? 'claude', project.selectedModel ?? undefined);
     const existingReasoningEffort = normalizeCodexReasoningEffort(project.selectedReasoningEffort ?? undefined);
@@ -409,6 +410,28 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
       console.warn('[API] Preview auto-start check failed (will continue):', error);
     }
 
+    const handleAsyncLaunchFailure = (scope: string) => async (error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`[API] ${scope}:`, error);
+
+      if (requestId) {
+        try {
+          await markUserRequestAsFailed(requestId, message);
+        } catch (markError) {
+          console.error('[API] Failed to mark request as failed:', markError);
+        }
+      }
+
+      streamManager.publish(project_id, {
+        type: 'status',
+        data: {
+          status: 'error',
+          message,
+          requestId,
+        },
+      });
+    };
+
     if (isInitialPrompt) {
       if (cliPreference === 'codex') {
         initializeCodexProject(
@@ -418,9 +441,7 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
           selectedModel,
           selectedReasoningEffort,
           requestId,
-        ).catch((error) => {
-          console.error('[API] Failed to initialize project:', error);
-        });
+        ).catch(handleAsyncLaunchFailure('Failed to initialize project'));
       } else {
         const executor =
           cliPreference === 'cursor'
@@ -437,9 +458,7 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
           finalInstruction,
           selectedModel,
           requestId,
-        ).catch((error) => {
-          console.error('[API] Failed to initialize project:', error);
-        });
+        ).catch(handleAsyncLaunchFailure('Failed to initialize project'));
       }
     } else {
       const sessionId =
@@ -458,9 +477,7 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
           selectedReasoningEffort,
           sessionId,
           requestId,
-        ).catch((error) => {
-          console.error('[API] Failed to execute AI:', error);
-        });
+        ).catch(handleAsyncLaunchFailure('Failed to execute AI'));
       } else {
         const executor =
           cliPreference === 'cursor'
@@ -478,9 +495,7 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
           selectedModel,
           sessionId,
           requestId,
-        ).catch((error) => {
-          console.error('[API] Failed to execute AI:', error);
-        });
+        ).catch(handleAsyncLaunchFailure('Failed to execute AI'));
       }
     }
 

@@ -25,6 +25,11 @@ import {
   markUserRequestAsFailed,
 } from '@/lib/services/user-requests';
 import { serializeMessage, createRealtimeMessage } from '@/lib/serializers/chat';
+import {
+  buildCodexShellSpawn,
+  createInactivityTimeout,
+  parseCodexEventLine,
+} from '@/lib/services/cli/codex-shell';
 
 type ToolAction = 'Write' | 'Edit' | 'Delete' | 'Bash' | 'Info';
 
@@ -81,6 +86,8 @@ const CODEX_ENV = () => {
 };
 
 const CODEX_EXECUTABLE = process.platform === 'win32' ? 'codex.cmd' : 'codex';
+const CODEX_INACTIVITY_TIMEOUT_MS = 10 * 60 * 1000;
+const CODEX_EXECUTION_FORCE_KILL_GRACE_MS = 5 * 1000;
 
 function publishStatus(projectId: string, status: string, requestId?: string, message?: string) {
   streamManager.publish(projectId, {
@@ -555,6 +562,7 @@ async function executeCodex(
     normalizedModel,
     promptWithContext,
   ];
+  const launchSpec = buildCodexShellSpawn(CODEX_EXECUTABLE, codexArgs);
 
   console.log('[CodexService] Spawning Codex CLI', {
     projectId,
@@ -562,16 +570,20 @@ async function executeCodex(
     model: normalizedModel,
     reasoningEffort: normalizedReasoningEffort,
     requestId,
+    spawnMode: launchSpec.spawnMode,
   });
 
-  const child = spawn(CODEX_EXECUTABLE, codexArgs, {
+  const child = spawn(launchSpec.command, launchSpec.args, {
     cwd: repoPath,
     env: CODEX_ENV(),
-    stdio: ['pipe', 'pipe', 'pipe'],
+    stdio: launchSpec.stdio,
   });
 
   const stderrBuffer: string[] = [];
   child.stderr?.on('data', (chunk) => {
+    if (!hasCompleted) {
+      inactivityTimeout.touch();
+    }
     const text = String(chunk).trim();
     if (text) {
       stderrBuffer.push(text);
@@ -590,6 +602,37 @@ async function executeCodex(
   // Enhanced message tracking to prevent duplicates
   const streamedMessageIds = new Set<string>();
   const streamedToolHashes = new Set<string>();
+  let didTimeout = false;
+  let terminalOutcome: 'pending' | 'completed' | 'failed' = 'pending';
+  let forceKillTimeoutId: NodeJS.Timeout | null = null;
+  const hasFailedTerminalOutcome = () => terminalOutcome === 'failed';
+
+  const inactivityTimeout = createInactivityTimeout({
+    timeoutMs: CODEX_INACTIVITY_TIMEOUT_MS,
+    onTimeout: () => {
+      if (hasCompleted) {
+        return;
+      }
+
+      didTimeout = true;
+      const timeoutMessage = `Codex execution timed out after ${CODEX_INACTIVITY_TIMEOUT_MS}ms of inactivity`;
+      stderrBuffer.push(timeoutMessage);
+      console.error('[CodexService] %s', timeoutMessage);
+      child.kill('SIGTERM');
+      forceKillTimeoutId = setTimeout(() => {
+        if (!hasCompleted) {
+          child.kill('SIGKILL');
+        }
+      }, CODEX_EXECUTION_FORCE_KILL_GRACE_MS);
+      forceKillTimeoutId.unref?.();
+    },
+  });
+
+  child.stdout?.on('data', () => {
+    if (!hasCompleted) {
+      inactivityTimeout.touch();
+    }
+  });
 
   const buildAssistantPayload = () => {
     const trimmedAssistant = agentBuffer.trim();
@@ -895,21 +938,35 @@ async function executeCodex(
 
   child.on('error', (error) => {
     const message = error instanceof Error ? error.message : String(error);
+    if (hasCompleted) {
+      return;
+    }
+    hasCompleted = true;
+    terminalOutcome = 'failed';
     void (async () => {
-      if (hasCompleted) {
-        return;
-      }
       await flushAssistantMessage(true);
-      publishStatus(projectId, 'completed', requestId, 'Codex execution failed to start');
+      publishStatus(projectId, 'error', requestId, 'Codex execution failed to start');
       if (requestId) {
         await markUserRequestAsFailed(requestId, message);
       }
-      hasCompleted = true;
     })();
   });
 
   child.on('close', (code: number | null, signal: NodeJS.Signals | null) => {
     if (hasCompleted) {
+      return;
+    }
+    if (didTimeout) {
+      const timeoutMessage = `Codex execution timed out after ${CODEX_INACTIVITY_TIMEOUT_MS}ms of inactivity`;
+      hasCompleted = true;
+      terminalOutcome = 'failed';
+      void (async () => {
+        await flushAssistantMessage(true);
+        publishStatus(projectId, 'error', requestId, timeoutMessage);
+        if (requestId) {
+          await markUserRequestAsFailed(requestId, timeoutMessage);
+        }
+      })();
       return;
     }
     const detailParts: string[] = [];
@@ -920,13 +977,14 @@ async function executeCodex(
       detailParts.push(`signal ${signal}`);
     }
     const detail = detailParts.length > 0 ? detailParts.join(', ') : 'unexpected shutdown';
+    hasCompleted = true;
+    terminalOutcome = 'failed';
     void (async () => {
       await flushAssistantMessage(true);
-      publishStatus(projectId, 'completed', requestId, 'Codex session ended unexpectedly');
+      publishStatus(projectId, 'error', requestId, 'Codex session ended unexpectedly');
       if (requestId) {
         await markUserRequestAsFailed(requestId, `Codex process terminated (${detail})`);
       }
-      hasCompleted = true;
     })();
   });
 
@@ -935,10 +993,8 @@ async function executeCodex(
 
     for await (const line of rl) {
       if (!line.trim()) continue;
-      let event: Record<string, unknown>;
-      try {
-        event = JSON.parse(line) as Record<string, unknown>;
-      } catch (error) {
+      const event = parseCodexEventLine(line);
+      if (!event) {
         console.warn('[CodexService] Failed to parse Codex event:', line);
         continue;
       }
@@ -961,11 +1017,12 @@ async function executeCodex(
             pickFirstString((item as Record<string, unknown> | null)?.error) ??
             'Codex execution failed';
           await flushAssistantMessage(true);
-          publishStatus(projectId, 'completed', requestId, message);
+          publishStatus(projectId, 'error', requestId, message);
           if (requestId) {
             await markUserRequestAsFailed(requestId, message);
           }
           hasCompleted = true;
+          terminalOutcome = 'failed';
           return;
         }
         case 'error': {
@@ -974,15 +1031,17 @@ async function executeCodex(
             pickFirstString((event as { message?: string }).message) ??
             (stderrBuffer.slice(-5).join('\n') || 'Codex execution failed');
           await flushAssistantMessage(true);
-          publishStatus(projectId, 'completed', requestId, 'Codex execution ended with errors');
+          publishStatus(projectId, 'error', requestId, 'Codex execution ended with errors');
           if (requestId) {
             await markUserRequestAsFailed(requestId, message);
           }
           hasCompleted = true;
+          terminalOutcome = 'failed';
           return;
         }
         case 'turn.completed':
           hasCompleted = true;
+          terminalOutcome = 'completed';
           break;
         default:
           if (process.env.NODE_ENV !== 'production') {
@@ -993,7 +1052,11 @@ async function executeCodex(
     }
 
     await flushAssistantMessage(true);
+    if (hasFailedTerminalOutcome()) {
+      return;
+    }
     hasCompleted = true;
+    terminalOutcome = 'completed';
 
     publishStatus(projectId, 'completed', requestId);
     if (requestId) {
@@ -1003,15 +1066,19 @@ async function executeCodex(
     await flushAssistantMessage(true);
     const message =
       error instanceof Error ? error.message : stderrBuffer.slice(-5).join('\n') || 'Codex execution failed';
-    publishStatus(projectId, 'completed', requestId, 'Codex execution terminated');
+    publishStatus(projectId, 'error', requestId, 'Codex execution terminated');
     if (requestId) {
       await markUserRequestAsFailed(requestId, message);
     }
+    terminalOutcome = 'failed';
     throw error;
   } finally {
+    inactivityTimeout.dispose();
+    if (forceKillTimeoutId) {
+      clearTimeout(forceKillTimeoutId);
+    }
     rl.close();
     if (!child.killed) {
-      child.stdin?.end();
       child.kill();
     }
   }

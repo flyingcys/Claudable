@@ -31,6 +31,10 @@ const LOG_LIMIT = PREVIEW_CONFIG.LOG_LIMIT;
 const PREVIEW_FALLBACK_PORT_START = PREVIEW_CONFIG.FALLBACK_PORT_START;
 const PREVIEW_FALLBACK_PORT_END = PREVIEW_CONFIG.FALLBACK_PORT_END;
 const PREVIEW_MAX_PORT = 65_535;
+const PROJECTS_DIR = process.env.PROJECTS_DIR || './data/projects';
+const PROJECTS_DIR_ABSOLUTE = path.isAbsolute(PROJECTS_DIR)
+  ? PROJECTS_DIR
+  : path.resolve(process.cwd(), PROJECTS_DIR);
 const ROOT_ALLOWED_FILES = new Set([
   '.DS_Store',
   '.editorconfig',
@@ -619,7 +623,7 @@ class PreviewManager {
 
     const projectPath = project.repoPath
       ? path.resolve(project.repoPath)
-      : path.join(process.cwd(), 'projects', projectId);
+      : path.join(PROJECTS_DIR_ABSOLUTE, projectId);
 
     await fs.mkdir(projectPath, { recursive: true });
 
@@ -700,7 +704,7 @@ class PreviewManager {
 
     const projectPath = project.repoPath
       ? path.resolve(project.repoPath)
-      : path.join(process.cwd(), 'projects', projectId);
+      : path.join(PROJECTS_DIR_ABSOLUTE, projectId);
 
     await fs.mkdir(projectPath, { recursive: true });
 

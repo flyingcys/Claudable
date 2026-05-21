@@ -1403,7 +1403,7 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
         onProjectStatusUpdate?.(statusData.status, statusData.message);
       }
 
-      if (resolvedStatus === 'completed') {
+      if (resolvedStatus === 'completed' || resolvedStatus === 'error') {
         setActiveSession(null);
         onSessionStatusChange?.(false);
         setIsWaitingForResponse(false);
@@ -1988,6 +1988,9 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
   // Poll session status periodically
   const startSessionPolling = useCallback(
     (sessionId: string) => {
+      const isActiveSessionStatus = (status?: string | null) =>
+        status === 'pending' || status === 'active' || status === 'running';
+
       if (pollIntervalRef.current) {
         clearInterval(pollIntervalRef.current);
       }
@@ -1998,9 +2001,27 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
             `${API_BASE}/api/chat/${projectId}/sessions/${sessionId}/status`
           );
           if (response.ok) {
-            const sessionStatus = await response.json();
+            const sessionStatusResponse = await response.json();
+            const sessionStatus =
+              sessionStatusResponse &&
+              typeof sessionStatusResponse === 'object' &&
+              'data' in sessionStatusResponse &&
+              sessionStatusResponse.data &&
+              typeof sessionStatusResponse.data === 'object'
+                ? (sessionStatusResponse.data as Partial<ActiveSession>)
+                : null;
+            const resolvedStatus = sessionStatus?.status;
 
-            if (sessionStatus.status !== 'active') {
+            if (resolvedStatus) {
+              setActiveSession((prev) => ({
+                ...(prev ?? {}),
+                ...sessionStatus,
+                sessionId: sessionStatus.sessionId ?? prev?.sessionId ?? sessionId,
+                status: resolvedStatus,
+              }));
+            }
+
+            if (!isActiveSessionStatus(resolvedStatus)) {
               setActiveSession(null);
               onSessionStatusChange?.(false);
 
@@ -2010,7 +2031,9 @@ export default function ChatLog({ projectId, onSessionStatusChange, onProjectSta
               }
 
               // Trigger reload flag instead of direct call
-          setHasLoadedOnce(false);
+              setHasLoadedOnce(false);
+            } else {
+              onSessionStatusChange?.(true);
             }
           }
         } catch (error) {
