@@ -30,6 +30,7 @@ import {
   createInactivityTimeout,
   parseCodexEventLine,
 } from '@/lib/services/cli/codex-shell';
+import { resolveCodexTerminalEvent } from '@/lib/services/cli/codex-terminal';
 
 type ToolAction = 'Write' | 'Edit' | 'Delete' | 'Bash' | 'Info';
 
@@ -936,6 +937,16 @@ async function executeCodex(
     }
   };
 
+  const finalizeSuccessfulCompletion = async () => {
+    hasCompleted = true;
+    terminalOutcome = 'completed';
+    await flushAssistantMessage(true);
+    publishStatus(projectId, 'completed', requestId);
+    if (requestId) {
+      await markUserRequestAsCompleted(requestId);
+    }
+  };
+
   child.on('error', (error) => {
     const message = error instanceof Error ? error.message : String(error);
     if (hasCompleted) {
@@ -1039,10 +1050,19 @@ async function executeCodex(
           terminalOutcome = 'failed';
           return;
         }
-        case 'turn.completed':
-          hasCompleted = true;
-          terminalOutcome = 'completed';
+        case 'turn.completed': {
+          const terminalResolution = resolveCodexTerminalEvent(eventType, {
+            hasCompleted,
+            terminalOutcome,
+          });
+          hasCompleted = terminalResolution.hasCompleted;
+          terminalOutcome = terminalResolution.terminalOutcome;
+          if (terminalResolution.shouldFinalizeSuccess) {
+            await finalizeSuccessfulCompletion();
+            return;
+          }
           break;
+        }
         default:
           if (process.env.NODE_ENV !== 'production') {
             console.debug('[CodexService] Unhandled Codex event:', event);
@@ -1055,13 +1075,7 @@ async function executeCodex(
     if (hasFailedTerminalOutcome()) {
       return;
     }
-    hasCompleted = true;
-    terminalOutcome = 'completed';
-
-    publishStatus(projectId, 'completed', requestId);
-    if (requestId) {
-      await markUserRequestAsCompleted(requestId);
-    }
+    await finalizeSuccessfulCompletion();
   } catch (error) {
     await flushAssistantMessage(true);
     const message =

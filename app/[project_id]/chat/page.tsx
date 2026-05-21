@@ -901,6 +901,70 @@ const persistProjectPreferences = useCallback(
     }
   }, [projectId]);
 
+  const syncPreviewStatus = useCallback(async (options?: { restartIfStopped?: boolean }) => {
+    try {
+      const response = await fetch(`${API_BASE}/api/projects/${projectId}/preview/status`, {
+        cache: 'no-store',
+      });
+
+      if (!response.ok) {
+        return null;
+      }
+
+      const payload = await response.json();
+      const data = payload?.data ?? payload ?? {};
+      const status = typeof data.status === 'string' ? data.status : null;
+      const url =
+        typeof data.url === 'string' && data.url.trim().length > 0
+          ? data.url.trim()
+          : null;
+
+      if (status === 'running' && url) {
+        setPreviewUrl(url);
+        return { status, url };
+      }
+
+      setPreviewUrl(null);
+
+      if (options?.restartIfStopped && !hasActiveRequests && !isStartingPreview) {
+        await start();
+        return { status: 'restarting', url: null };
+      }
+
+      return { status, url: null };
+    } catch (error) {
+      console.warn('Failed to sync preview status:', error);
+      return null;
+    }
+  }, [projectId, hasActiveRequests, isStartingPreview, start]);
+
+  const handlePreviewIframeError = useCallback(() => {
+    const overlay = document.getElementById('iframe-error-overlay');
+    if (overlay) {
+      overlay.style.display = 'flex';
+    }
+
+    void (async () => {
+      const status = await syncPreviewStatus({ restartIfStopped: true });
+      if (!status?.url || !iframeRef.current) {
+        return;
+      }
+
+      try {
+        const normalizedRoute =
+          currentRoute && currentRoute.startsWith('/')
+            ? currentRoute
+            : `/${currentRoute || ''}`;
+        const baseUrl = status.url.split('?')[0] || status.url;
+        const url = new URL(baseUrl + normalizedRoute);
+        url.searchParams.set('_ts', Date.now().toString());
+        iframeRef.current.src = url.toString();
+      } catch (error) {
+        console.warn('Failed to recover preview iframe:', error);
+      }
+    })();
+  }, [currentRoute, syncPreviewStatus]);
+
   // Navigate to specific route in iframe
   const navigateToRoute = (route: string) => {
     if (previewUrl && iframeRef.current) {
@@ -1672,6 +1736,11 @@ const persistProjectPreferences = useCallback(
     loadProjectInfoRef.current = loadProjectInfo;
   }, [loadProjectInfo]);
 
+  const syncPreviewStatusRef = useRef(syncPreviewStatus);
+  useEffect(() => {
+    syncPreviewStatusRef.current = syncPreviewStatus;
+  }, [syncPreviewStatus]);
+
   useEffect(() => {
     if (!searchParams) return;
     const cliParam = searchParams.get('cli');
@@ -2232,6 +2301,9 @@ const persistProjectPreferences = useCallback(
         const projectSettings = await loadProjectInfoRef.current?.();
         if (canceled) return;
 
+        await syncPreviewStatusRef.current?.();
+        if (canceled) return;
+
         await loadSettingsRef.current?.(projectSettings);
         if (canceled) return;
 
@@ -2529,12 +2601,7 @@ const persistProjectPreferences = useCallback(
                       <div className="flex items-center gap-1.5">
                         <button 
                           className="h-9 w-9 flex items-center justify-center bg-gray-100 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded-lg transition-colors"
-                          onClick={() => {
-                            const iframe = document.querySelector('iframe');
-                            if (iframe) {
-                              iframe.src = iframe.src;
-                            }
-                          }}
+                          onClick={handlePreviewIframeError}
                           title="Refresh preview"
                         >
                           <FaRedo size={14} />
@@ -2793,11 +2860,7 @@ const persistProjectPreferences = useCallback(
                         ref={iframeRef}
                         className="w-full h-full border-none bg-white "
                         src={previewUrl}
-                        onError={() => {
-                          // Show error overlay
-                          const overlay = document.getElementById('iframe-error-overlay');
-                          if (overlay) overlay.style.display = 'flex';
-                        }}
+                        onError={handlePreviewIframeError}
                         onLoad={() => {
                           // Hide error overlay when loaded successfully
                           const overlay = document.getElementById('iframe-error-overlay');

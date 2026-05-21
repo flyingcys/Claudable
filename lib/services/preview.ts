@@ -906,9 +906,33 @@ class PreviewManager {
       log(Buffer.from(`Preview process failed: ${error.message}`));
     });
 
-    await waitForPreviewReady(previewProcess.url, log).catch(() => {
+    const isReady = await waitForPreviewReady(previewProcess.url, log).catch(() => {
       // wait function already logged; ignore errors
+      return false;
     });
+
+    if (!isReady) {
+      previewProcess.status = 'error';
+      this.processes.delete(projectId);
+
+      try {
+        child.kill('SIGTERM');
+      } catch (error) {
+        console.error('[PreviewManager] Failed to stop unready preview process:', error);
+      }
+
+      await updateProject(projectId, {
+        previewUrl: null,
+        previewPort: null,
+      }).catch((error) => {
+        console.error('[PreviewManager] Failed to reset project preview after readiness timeout:', error);
+      });
+      await updateProjectStatus(projectId, 'idle').catch((error) => {
+        console.error('[PreviewManager] Failed to reset project status after readiness timeout:', error);
+      });
+
+      throw new Error(`Preview server did not become ready at ${previewProcess.url} within 30000ms`);
+    }
 
     await updateProject(projectId, {
       previewUrl: previewProcess.url,
