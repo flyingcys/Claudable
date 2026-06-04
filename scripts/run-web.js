@@ -6,14 +6,23 @@
  */
 
 const { spawn } = require('child_process');
+const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const dotenv = require('dotenv');
 const { ensureEnvironment } = require('./setup-env');
-const { PrismaClient } = require('@prisma/client');
 
 const rootDir = path.join(__dirname, '..');
 const isWindows = os.platform() === 'win32';
+const prismaCliPath = path.join(rootDir, 'node_modules', 'prisma', 'build', 'index.js');
+const nextCliPath = path.join(rootDir, 'node_modules', 'next', 'dist', 'bin', 'next');
+const prismaClientEntry = path.join(
+  rootDir,
+  'node_modules',
+  '.prisma',
+  'client',
+  'default.js'
+);
 
 dotenv.config({ path: path.join(rootDir, '.env') });
 dotenv.config({ path: path.join(rootDir, '.env.local') });
@@ -60,7 +69,7 @@ function parseCliArgs(argv) {
 function runPrismaDbPush() {
   return new Promise((resolve, reject) => {
     console.log('🗃️  Synchronizing Prisma schema (prisma db push)...');
-    const child = spawn('npx', ['prisma', 'db', 'push'], {
+    const child = spawn(process.execPath, [prismaCliPath, 'db', 'push'], {
       cwd: rootDir,
       stdio: 'inherit',
       shell: isWindows,
@@ -86,6 +95,52 @@ function runPrismaDbPush() {
   });
 }
 
+function runPrismaGenerate() {
+  return new Promise((resolve, reject) => {
+    console.log('🧬 Generating Prisma Client...');
+    const child = spawn(process.execPath, [prismaCliPath, 'generate'], {
+      cwd: rootDir,
+      stdio: 'inherit',
+      shell: isWindows,
+      env: {
+        ...process.env,
+        PRISMA_HIDE_UPDATE_MESSAGE: '1',
+      },
+    });
+
+    child.on('exit', (code) => {
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(
+          new Error(`prisma generate exited with code ${code ?? 'unknown'}`)
+        );
+      }
+    });
+
+    child.on('error', (error) => {
+      reject(error);
+    });
+  });
+}
+
+async function ensurePrismaClientGenerated() {
+  if (fs.existsSync(prismaClientEntry)) {
+    return;
+  }
+
+  if (!fs.existsSync(prismaCliPath)) {
+    throw new Error('Prisma CLI is missing. Run npm install first.');
+  }
+
+  await runPrismaGenerate();
+}
+
+async function loadPrismaClientCtor() {
+  await ensurePrismaClientGenerated();
+  return require('@prisma/client').PrismaClient;
+}
+
 async function ensureDatabaseSynced() {
   if (process.env.SKIP_DB_SYNC === '1') {
     return;
@@ -93,12 +148,14 @@ async function ensureDatabaseSynced() {
 
   let prisma;
   try {
+    const PrismaClient = await loadPrismaClientCtor();
     prisma = new PrismaClient();
   } catch (error) {
     console.warn(
       '⚠️  Failed to initialize Prisma Client, attempting to sync automatically:',
       error instanceof Error ? error.message : error
     );
+    await ensurePrismaClientGenerated();
     await runPrismaDbPush();
     return;
   }
@@ -142,8 +199,8 @@ async function startWebDevServer({
   console.log(`🚀 Starting Next.js dev server on ${resolvedUrl}`);
 
   const child = spawn(
-    'npx',
-    ['next', 'dev', '--port', resolvedPort.toString(), ...passthrough],
+    process.execPath,
+    [nextCliPath, 'dev', '--port', resolvedPort.toString(), ...passthrough],
     {
       cwd: rootDir,
       stdio,
